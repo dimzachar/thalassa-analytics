@@ -1,0 +1,16 @@
+# duckdb.db
+duckdb.db.wal
+.venv/
+.env
+__pycache__/
+pipeline/assets/ingestion/__pycache__/
+data/raw/
+!data/raw/.gitkeep
+
+.bruin.yml
+logs/runs
+logs/*.log
+*.py[cod]
+
+docs/*
+.md

@@ -1,0 +1,43 @@
+name: thalassa
+
+schedule: daily
+start_date: "2024-01-01"
+
+default_connections:
+  google_cloud_platform: gcp-default
+
+variables:
+  pipeline_default_start_date:
+    type: string
+    default: "2024-01-01"
+  allow_pipeline_default_start_date:
+    type: boolean
+    default: false
+  request_window_unit:
+    type: string
+    enum: ["day", "month", "year"]
+    default: "day"
+  request_window_size:
+    type: integer
+    minimum: 1
+    default: 1
+  request_max_retries:
+    type: integer
+    minimum: 0
+    default: 3
+  request_retry_base_delay_seconds:
+    type: number
+    exclusiveMinimum: 0
+    default: 1.0
+  request_retry_max_delay_seconds:
+    type: number
+    exclusiveMinimum: 0
+    default: 30.0
+  request_failed_window_replay_passes:
+    type: integer
+    minimum: 0
+    default: 2
+  request_failed_window_replay_delay_seconds:
+    type: number
+    minimum: 0
+    default: 5.0
