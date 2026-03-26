@@ -13,12 +13,15 @@ from google.api_core.exceptions import NotFound
 from google.cloud import bigquery
 from streamlit_option_menu import option_menu
 
+from intelligence import build_agent_context
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_ROOT / ".env")
 
 BQ_PROJECT = os.getenv("THALASSA_BQ_PROJECT", "").strip()
 BQ_DATASET = os.getenv("THALASSA_BQ_DATASET", "thalassa").strip() or "thalassa"
 BQ_LOCATION = os.getenv("THALASSA_BQ_LOCATION", "").strip() or None
+INTELLIGENCE_TABLE = os.getenv("THALASSA_INTELLIGENCE_TABLE", "thalassa.intelligence_snapshots").strip() or "thalassa.intelligence_snapshots"
 
 if not BQ_PROJECT:
     st.set_page_config(page_title="Thalassa Grid", page_icon="ferry", layout="wide")
@@ -1252,6 +1255,65 @@ def _weekday_profile_verify(daily: pd.DataFrame) -> tuple[pd.DataFrame, dict[str
     }
     return weekday_stats, summary
 
+
+def _build_agent_fallback_lines(
+    *,
+    kpi_window_text: str,
+    baseline_scope_text: str,
+    pax_val: float,
+    veh_val: float,
+    route_rank: pd.DataFrame,
+    port_rank: pd.DataFrame,
+    congestion: float,
+    daily: pd.DataFrame,
+) -> list[str]:
+    lines = [
+        f"KPI window ({kpi_window_text}): {_fmt_compact(pax_val)} passengers, {_fmt_compact(veh_val)} vehicles.",
+        f"Baseline scope: {baseline_scope_text}.",
+        f"Top corridor: {route_rank.iloc[0]['pair_label'] if not route_rank.empty else 'No data'}.",
+        f"Port flow leader: {port_rank.iloc[0]['port_name'] if not port_rank.empty else 'No data'}.",
+        f"Congestion index: {congestion:.0f}%.",
+    ]
+
+    if not daily.empty and "service_date" in daily.columns and "total_passengers" in daily.columns:
+        trend_df = daily[["service_date", "total_passengers"]].copy()
+        trend_df["service_date"] = pd.to_datetime(trend_df["service_date"], errors="coerce")
+        trend_df["total_passengers"] = pd.to_numeric(trend_df["total_passengers"], errors="coerce").fillna(0)
+        trend_df = trend_df.dropna(subset=["service_date"]).sort_values("service_date")
+        if len(trend_df) >= 14:
+            recent_avg = float(trend_df.tail(7)["total_passengers"].mean())
+            prior_avg = float(trend_df.iloc[-14:-7]["total_passengers"].mean())
+            if prior_avg > 0:
+                delta_pct = ((recent_avg - prior_avg) / prior_avg) * 100.0
+                lines.append(f"Latest 7-day passenger average vs prior 7-day window: {delta_pct:+.1f}%.")
+
+    return lines
+
+def _render_deepen_insight(chart_id: str, snapshot: object | None) -> None:
+    state_key = f"show_deepen_{chart_id}"
+    if st.button("Deepen this chart", key=f"btn_{state_key}"):
+        st.session_state[state_key] = not bool(st.session_state.get(state_key, False))
+
+    if not st.session_state.get(state_key, False):
+        return
+
+    if snapshot is None:
+        st.caption("No cached deepen insight found for current data version.")
+        return
+
+    header = snapshot.title
+    if getattr(snapshot, "generated_at", None):
+        header = f"{header} | {snapshot.generated_at}"
+
+    lines = [str(line).strip() for line in getattr(snapshot, "lines", []) if str(line).strip()]
+    if not lines:
+        st.caption("Cached deepen insight is empty.")
+        return
+
+    st.caption(header)
+    st.markdown("\n".join([f"- {escape(line)}" for line in lines]), unsafe_allow_html=True)
+
+
 _inject_styles()
 
 try:
@@ -1601,6 +1663,56 @@ corridor_focus = _focus_concentration_data(daily, routes, top_corridors=3, grain
 top_routes_scatter = route_rank.head(max(top_n, 14)).copy()
 top_ports_net = _port_netflow_from_routes(routes).head(top_n).copy()
 
+agent_context = build_agent_context(
+    _run_query,
+    _qualify,
+    table_name=INTELLIGENCE_TABLE,
+    daily_df=daily,
+    routes_df=routes,
+    filters={
+        "start": selected_start.isoformat(),
+        "end": selected_end.isoformat(),
+        "grain": selected_grain,
+        "route": selected_route,
+        "port": selected_port,
+    },
+    stale_after_hours=48,
+)
+
+agent_snapshot = agent_context.panel_snapshot
+agent_snapshot_freshness = agent_context.freshness
+notable_change = agent_context.notable_change
+agent_llm_gate_label = "LLM gate: trigger" if notable_change.should_trigger_llm else "LLM gate: skip"
+agent_llm_gate_reasons = notable_change.reasons
+
+agent_title = "Harbor Intelligence"
+agent_subtitle = "Rule-based narrative scaffold"
+agent_lines = _build_agent_fallback_lines(
+    kpi_window_text=kpi_window_text,
+    baseline_scope_text=baseline_scope_text,
+    pax_val=pax_val,
+    veh_val=veh_val,
+    route_rank=route_rank,
+    port_rank=port_rank,
+    congestion=congestion,
+    daily=daily,
+)
+
+if agent_snapshot is not None:
+    agent_title = agent_snapshot.title
+    agent_lines = agent_snapshot.lines
+    if agent_snapshot.generated_at:
+        agent_subtitle = f"Snapshot cache | Generated {agent_snapshot.generated_at}"
+    else:
+        agent_subtitle = "Snapshot cache"
+
+agent_report = "\\n\\n".join(agent_lines)
+
+deepen_traffic_pulse_snapshot = agent_context.deepen_traffic_pulse_snapshot
+deepen_top_corridors_snapshot = agent_context.deepen_top_corridors_snapshot
+deepen_port_balance_snapshot = agent_context.deepen_port_balance_snapshot
+
+
 if active_page == "dashboard":
     st.markdown(
         f"""
@@ -1667,6 +1779,8 @@ if active_page == "dashboard":
                     ].copy()
                     st.vega_lite_chart(_trend_spec(monthly_pulse), width="stretch")
 
+            _render_deepen_insight("traffic_pulse", deepen_traffic_pulse_snapshot)
+
         with st.container(border=True):
             _section_header("Top Corridors", "Highest passenger corridors in the selected date range.")
             if route_rank.empty:
@@ -1675,27 +1789,29 @@ if active_page == "dashboard":
                 top_routes = route_rank.head(top_n)
                 st.vega_lite_chart(_bar_spec(top_routes, "pair_label", "passengers", CHART_ROUTE_BAR_COLOR), width="stretch")
 
+            _render_deepen_insight("top_corridors", deepen_top_corridors_snapshot)
+
     with right:
         with st.container(border=True):
-            _section_header("Agent Card", "Placeholder card to be wired to the assistant later.")
-            report = "\n\n".join([
-                f"KPI WINDOW ({kpi_window_text}): {_fmt_compact(pax_val)} passengers, {_fmt_compact(veh_val)} vehicles.",
-                f"BASELINE: {baseline_scope_text}",
-                f"TOP CORRIDOR: {(route_rank.iloc[0]['pair_label'] if not route_rank.empty else 'No data')}",
-                f"TOP PORT: {(port_rank.iloc[0]['port_name'] if not port_rank.empty else 'No data')}",
-                f"CONGESTION INDEX: {congestion:.0f}%",
-            ])
+            _section_header("Agent Card", "Auto facts, deltas, and anomalies from cached intelligence snapshots.")
+            if agent_snapshot_freshness.is_stale:
+                st.warning("Intelligence snapshots are stale or missing (no recent auto_panel snapshot in last 48 hours).")
+            elif agent_snapshot_freshness.hours_since_latest is not None:
+                st.caption(f"Snapshot freshness: {agent_snapshot_freshness.hours_since_latest:.1f}h since latest auto_panel snapshot.")
+            if agent_llm_gate_reasons:
+                st.caption(f"{agent_llm_gate_label} | " + "; ".join(agent_llm_gate_reasons))
+            else:
+                st.caption(f"{agent_llm_gate_label} | no notable change detected")
             st.markdown(
                 f"""
                 <div class="agent">
-                    <h4>Harbor Intelligence</h4>
-                    <small>Rule-based narrative scaffold</small>
-                    <pre>{report}</pre>
+                    <h4>{escape(agent_title)}</h4>
+                    <small>{escape(agent_subtitle)}</small>
+                    <pre>{escape(agent_report)}</pre>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
-
         with st.container(border=True):
             _section_header("Port Balance", "Departure + arrival passenger totals by port.")
             if port_rank.empty:
@@ -1704,6 +1820,8 @@ if active_page == "dashboard":
                 ports_plot = port_rank.head(top_n).copy()
                 ports_plot["total"] = ports_plot["total_departing_passengers"] + ports_plot["total_arriving_passengers"]
                 st.vega_lite_chart(_bar_spec(ports_plot, "port_name", "total", CHART_PORT_BAR_COLOR), width="stretch")
+
+            _render_deepen_insight("port_balance", deepen_port_balance_snapshot)
 
 else:
     top_corridor_label = route_rank.iloc[0]["pair_label"] if not route_rank.empty else "No data"
@@ -1825,7 +1943,8 @@ else:
             weekday_order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
             weekday_chart_df["weekday"] = pd.Categorical(weekday_chart_df["weekday"], categories=weekday_order, ordered=True)
             weekday_chart = (
-                alt.Chart(weekday_chart_df)
+                alt.Chart(weekday_chart_df)
+
                 .mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5, color=CHART_PRIMARY_BAR_COLOR)
                 .encode(
                     x=alt.X("weekday:N", sort=weekday_order, title=None),
@@ -1909,6 +2028,5 @@ else:
                     hide_index=True,
                     width="stretch",
                 )
-
 
 
