@@ -11,6 +11,34 @@ materialization:
   cluster_by:
     - movement_type
     - port_name
+
+columns:
+  - name: event_id
+    type: string
+    checks:
+      - name: not_null
+  - name: service_date
+    type: date
+    checks:
+      - name: not_null
+  - name: movement_type
+    type: string
+    checks:
+      - name: not_null
+      - name: accepted_values
+        value: "departure,arrival"
+  - name: port_name
+    type: string
+    checks:
+      - name: not_null
+  - name: passenger_count
+    type: integer
+    checks:
+      - name: non_negative
+  - name: vehicle_count
+    type: integer
+    checks:
+      - name: non_negative
 @bruin */
 
 SELECT

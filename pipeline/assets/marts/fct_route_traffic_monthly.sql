@@ -12,6 +12,40 @@ materialization:
     - departure_port
     - arrival_port
     - route_pair_key
+
+columns:
+  - name: year_month
+    type: date
+    checks:
+      - name: not_null
+  - name: route_key
+    type: string
+    checks:
+      - name: not_null
+  - name: route_pair_key
+    type: string
+    checks:
+      - name: not_null
+  - name: departure_port
+    type: string
+    checks:
+      - name: not_null
+  - name: arrival_port
+    type: string
+    checks:
+      - name: not_null
+  - name: traffic_record_count
+    type: integer
+    checks:
+      - name: positive
+  - name: total_passengers
+    type: integer
+    checks:
+      - name: non_negative
+  - name: total_vehicles
+    type: integer
+    checks:
+      - name: non_negative
 @bruin */
 
 SELECT

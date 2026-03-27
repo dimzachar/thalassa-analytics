@@ -10,6 +10,40 @@ materialization:
   partition_by: week_start
   cluster_by:
     - port_name
+
+columns:
+  - name: week_start
+    type: date
+    checks:
+      - name: not_null
+  - name: port_name
+    type: string
+    checks:
+      - name: not_null
+  - name: departure_record_count
+    type: integer
+    checks:
+      - name: non_negative
+  - name: arrival_record_count
+    type: integer
+    checks:
+      - name: non_negative
+  - name: total_departing_passengers
+    type: integer
+    checks:
+      - name: non_negative
+  - name: total_arriving_passengers
+    type: integer
+    checks:
+      - name: non_negative
+  - name: total_departing_vehicles
+    type: integer
+    checks:
+      - name: non_negative
+  - name: total_arriving_vehicles
+    type: integer
+    checks:
+      - name: non_negative
 @bruin */
 
 SELECT

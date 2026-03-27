@@ -10,6 +10,40 @@ materialization:
   partition_by: year_month
   cluster_by:
     - port_name
+
+columns:
+  - name: year_month
+    type: date
+    checks:
+      - name: not_null
+  - name: port_name
+    type: string
+    checks:
+      - name: not_null
+  - name: departure_record_count
+    type: integer
+    checks:
+      - name: non_negative
+  - name: arrival_record_count
+    type: integer
+    checks:
+      - name: non_negative
+  - name: total_departing_passengers
+    type: integer
+    checks:
+      - name: non_negative
+  - name: total_arriving_passengers
+    type: integer
+    checks:
+      - name: non_negative
+  - name: total_departing_vehicles
+    type: integer
+    checks:
+      - name: non_negative
+  - name: total_arriving_vehicles
+    type: integer
+    checks:
+      - name: non_negative
 @bruin */
 
 SELECT

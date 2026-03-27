@@ -7,6 +7,33 @@ depends:
 
 materialization:
   type: table
+
+columns:
+  - name: year
+    type: integer
+    checks:
+      - name: not_null
+      - name: unique
+  - name: rows_count
+    type: integer
+    checks:
+      - name: positive
+  - name: distinct_itineraries
+    type: integer
+    checks:
+      - name: positive
+  - name: distinct_route_pairs
+    type: integer
+    checks:
+      - name: positive
+  - name: total_passengers
+    type: integer
+    checks:
+      - name: non_negative
+  - name: total_vehicles
+    type: integer
+    checks:
+      - name: non_negative
 @bruin */
 
 SELECT

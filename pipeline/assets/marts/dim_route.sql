@@ -7,6 +7,13 @@ depends:
 
 materialization:
   type: table
+
+columns:
+  - name: route_key
+    type: string
+    checks:
+      - name: not_null
+      - name: unique
 @bruin */
 
 SELECT

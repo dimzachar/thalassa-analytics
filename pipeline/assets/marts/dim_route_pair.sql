@@ -7,6 +7,29 @@ depends:
 
 materialization:
   type: table
+
+columns:
+  - name: route_pair_key
+    type: string
+    checks:
+      - name: not_null
+      - name: unique
+  - name: route_key
+    type: string
+    checks:
+      - name: not_null
+  - name: departure_port
+    type: string
+    checks:
+      - name: not_null
+  - name: arrival_port
+    type: string
+    checks:
+      - name: not_null
+  - name: traffic_record_count
+    type: integer
+    checks:
+      - name: positive
 @bruin */
 
 SELECT
