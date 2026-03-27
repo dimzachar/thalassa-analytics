@@ -1,14 +1,10 @@
-from __future__ import annotations
+"""Rule-based logic for deciding when a scoped view merits LLM generation."""
 
-from dataclasses import dataclass
+from __future__ import annotations
 
 import pandas as pd
 
-
-@dataclass
-class NotableChangeDecision:
-    should_trigger_llm: bool
-    reasons: list[str]
+from ..models.state import NotableChangeDecision
 
 
 def detect_notable_change(
@@ -19,6 +15,7 @@ def detect_notable_change(
     concentration_threshold_pct: float = 45.0,
     min_recent_avg_passengers: float = 1000.0,
 ) -> NotableChangeDecision:
+    """Flag large traffic swings or corridor concentration spikes in the scoped data."""
     reasons: list[str] = []
 
     if not daily_df.empty and {"service_date", "total_passengers"}.issubset(daily_df.columns):
@@ -33,9 +30,7 @@ def detect_notable_change(
             if prior_avg > 0:
                 delta_pct = ((recent_avg - prior_avg) / prior_avg) * 100.0
                 if abs(delta_pct) >= delta_threshold_pct and recent_avg >= min_recent_avg_passengers:
-                    reasons.append(
-                        f"7-day passenger average changed {delta_pct:+.1f}% vs prior week"
-                    )
+                    reasons.append(f"7-day passenger average changed {delta_pct:+.1f}% vs prior week")
 
     if not routes_df.empty and {"departure_port", "arrival_port", "total_passengers"}.issubset(routes_df.columns):
         grouped = routes_df[["departure_port", "arrival_port", "total_passengers"]].copy()
@@ -45,8 +40,6 @@ def detect_notable_change(
         if total_passengers > 0:
             top_share_pct = (float(grouped["total_passengers"].max()) / total_passengers) * 100.0
             if top_share_pct >= concentration_threshold_pct:
-                reasons.append(
-                    f"Top corridor concentration reached {top_share_pct:.1f}%"
-                )
+                reasons.append(f"Top corridor concentration reached {top_share_pct:.1f}%")
 
     return NotableChangeDecision(should_trigger_llm=bool(reasons), reasons=reasons)

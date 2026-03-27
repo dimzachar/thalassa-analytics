@@ -1,3 +1,5 @@
+"""Streamlit dashboard for maritime traffic analytics and cached intelligence snapshots."""
+
 from __future__ import annotations
 
 import concurrent.futures
@@ -13,7 +15,7 @@ from google.api_core.exceptions import NotFound
 from google.cloud import bigquery
 from streamlit_option_menu import option_menu
 
-from intelligence import build_agent_context
+from intelligence import build_agent_context, build_deterministic_report_lines
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_ROOT / ".env")
@@ -24,7 +26,6 @@ BQ_LOCATION = os.getenv("THALASSA_BQ_LOCATION", "").strip() or None
 INTELLIGENCE_TABLE = os.getenv("THALASSA_INTELLIGENCE_TABLE", "thalassa.intelligence_snapshots").strip() or "thalassa.intelligence_snapshots"
 
 if not BQ_PROJECT:
-    st.set_page_config(page_title="Thalassa Grid", page_icon="ferry", layout="wide")
     st.error("Set THALASSA_BQ_PROJECT in `.env` or environment variables.")
     st.stop()
 
@@ -60,6 +61,7 @@ CHART_NETFLOW_POS_COLOR = "#D55E00"
 CHART_NETFLOW_NEG_COLOR = "#0072B2"
 
 def _inject_styles() -> None:
+    """Inject the dashboard CSS styles."""
     st.markdown(
         """
         <style>
@@ -234,20 +236,77 @@ def _inject_styles() -> None:
         .panel-note { margin:.28rem 0 0 0; font-size:.83rem; color:var(--muted); line-height:1.45; }
         [data-testid="stVegaLiteChart"] > div { background: transparent !important; border-radius: .72rem; }
         .agent {
-            border:1px solid var(--stroke);
-            border-radius:.78rem;
-            padding:.9rem;
-            background: linear-gradient(180deg, rgba(32,55,112,.42), rgba(22,39,83,.34));
-            min-height: 360px;
+            position: relative;
+            border: 1px solid rgba(109, 139, 184, 0.42);
+            border-radius: 1rem;
+            padding: 1rem 1rem 1.05rem 1rem;
+            background:
+                radial-gradient(140% 100% at 0% 0%, rgba(14,165,233,.22) 0%, rgba(14,165,233,0) 52%),
+                linear-gradient(180deg, rgba(20,35,69,.66), rgba(14,26,54,.52));
+            min-height: 320px;
+            overflow: hidden;
         }
-        .agent h4 { margin:0; font-size:1.05rem; }
-        .agent small { color:var(--muted); }
-        .agent pre {
-            margin:.9rem 0 0 0; white-space:pre-wrap;
-            font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
-            color:#E7EDF8; font-size:.83rem; line-height:1.62;
-            border:1px solid var(--stroke); border-radius:.85rem;
-            padding:.85rem; background: rgba(255,255,255,.02);
+        .agent-wrap { margin-bottom: .9rem; }
+        .agent::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background: linear-gradient(120deg, transparent 15%, rgba(125,211,252,.09) 45%, transparent 75%);
+            transform: translateX(-100%);
+            animation: agent-sheen 8s ease-in-out infinite;
+        }
+        @keyframes agent-sheen {
+            0%, 70%, 100% { transform: translateX(-100%); }
+            85% { transform: translateX(100%); }
+        }
+        .agent-head {
+            display: flex;
+            align-items: center;
+            gap: .72rem;
+            margin-bottom: .78rem;
+        }
+        .agent-icon {
+            width: 2rem;
+            height: 2rem;
+            border-radius: .62rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(125, 211, 252, .45);
+            background: rgba(15, 118, 173, .22);
+            font-size: .95rem;
+            color: #BAE6FD;
+        }
+        .agent h4 { margin:0; font-size:1.06rem; letter-spacing:.01em; }
+        .agent small { color:var(--muted); display:block; margin-top:.1rem; }
+        .agent-flags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: .45rem;
+            margin-bottom: .82rem;
+        }
+        .agent-flag {
+            border: 1px solid rgba(126, 169, 220, .35);
+            border-radius: 999px;
+            padding: .28rem .56rem;
+            font-size: .7rem;
+            color: #D8E6FB;
+            background: rgba(21, 43, 83, .5);
+            line-height: 1.25;
+        }
+        .agent-report {
+            position: relative;
+            z-index: 1;
+            display: grid;
+            gap: .62rem;
+        }
+        .agent-report p {
+            margin: 0;
+            color: #E7EDF8;
+            font-size: .87rem;
+            line-height: 1.62;
+            letter-spacing: .001em;
         }
 
         .empty { color:var(--muted); font-size:.9rem; line-height:1.55; }
@@ -258,7 +317,7 @@ def _inject_styles() -> None:
             .analytics-chips { grid-template-columns: 1fr; }
             .topbar { flex-direction:column; }
             .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-            .agent { min-height: 310px; }
+            .agent { min-height: 300px; }
         }
         @media (max-width: 680px) {
             .block-container { padding-top: calc(3.6rem + env(safe-area-inset-top)); }
@@ -272,6 +331,7 @@ def _inject_styles() -> None:
 
 
 def _qualify(table_name: str) -> str:
+    """Turn a table name into a fully qualified BigQuery reference."""
     parts = table_name.split(".")
     if len(parts) == 3:
         return f"`{table_name}`"
@@ -283,6 +343,7 @@ def _qualify(table_name: str) -> str:
 
 @st.cache_resource
 def get_bq_client() -> bigquery.Client:
+    """Return a cached BigQuery client."""
     return bigquery.Client(project=BQ_PROJECT, location=BQ_LOCATION)
 
 
@@ -292,6 +353,7 @@ def _run_query(
     scalar_params: tuple[tuple[str, str, object], ...] = (),
     timeout_seconds: int = 30,
 ) -> pd.DataFrame:
+    """Run a parameterized BigQuery query and return the results as a DataFrame."""
     client = get_bq_client()
     job_config = bigquery.QueryJobConfig(
         query_parameters=[
@@ -309,6 +371,7 @@ def _run_query(
 
 @st.cache_data(show_spinner=False)
 def load_date_bounds() -> pd.DataFrame:
+    """Load the min and max service dates available in the dataset."""
     return _run_query(
         f"""
         SELECT MIN(service_date) AS min_date, MAX(service_date) AS max_date
@@ -319,6 +382,7 @@ def load_date_bounds() -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def load_daily(start_date: str, end_date: str) -> pd.DataFrame:
+    """Load daily network totals for the selected window."""
     return _run_query(
         f"""
         SELECT
@@ -340,6 +404,7 @@ def load_daily(start_date: str, end_date: str) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def load_weekly(start_date: str, end_date: str) -> pd.DataFrame:
+    """Load weekly network totals for the selected window."""
     return _run_query(
         f"""
         SELECT
@@ -360,6 +425,7 @@ def load_weekly(start_date: str, end_date: str) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def load_monthly(start_date: str, end_date: str) -> pd.DataFrame:
+    """Load monthly network totals for the selected window."""
     return _run_query(
         f"""
         SELECT
@@ -380,6 +446,7 @@ def load_monthly(start_date: str, end_date: str) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def load_routes(start_date: str, end_date: str) -> pd.DataFrame:
+    """Load route-level traffic metrics for the selected window."""
     return _run_query(
         f"""
         SELECT
@@ -399,6 +466,7 @@ def load_routes(start_date: str, end_date: str) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def load_ports(start_date: str, end_date: str) -> pd.DataFrame:
+    """Load port-level traffic metrics for the selected window."""
     return _run_query(
         f"""
         SELECT
@@ -420,6 +488,7 @@ def load_ports(start_date: str, end_date: str) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def load_filter_options() -> tuple[list[str], list[str]]:
+    """Load the available route and port options for the sidebar filters."""
     route_df = _run_query(
         f"""
         SELECT DISTINCT departure_port, arrival_port
@@ -444,6 +513,7 @@ def load_filter_options() -> tuple[list[str], list[str]]:
 
 
 def _resolve_preset_dates(preset: str, max_date: object) -> tuple[object, object]:
+    """Convert a sidebar date preset into actual start and end dates."""
     max_date_ts = pd.to_datetime(max_date).date()
     if preset == "Last 30D":
         return max_date_ts - pd.Timedelta(days=29), max_date_ts
@@ -454,7 +524,9 @@ def _resolve_preset_dates(preset: str, max_date: object) -> tuple[object, object
     return max_date_ts - pd.Timedelta(days=89), max_date_ts
 
 
+
 def _daily_from_routes(routes_df: pd.DataFrame) -> pd.DataFrame:
+    """Rebuild daily totals from route rows."""
     if routes_df.empty:
         return pd.DataFrame(columns=["service_date", "rows_count", "distinct_route_pairs", "total_passengers", "total_vehicles"])
     scoped = routes_df.copy()
@@ -473,6 +545,7 @@ def _daily_from_routes(routes_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _ports_from_routes(routes_df: pd.DataFrame) -> pd.DataFrame:
+    """Rebuild port-level aggregates from route rows."""
     if routes_df.empty:
         return pd.DataFrame(
             columns=[
@@ -534,6 +607,7 @@ def _ports_from_routes(routes_df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _port_netflow_from_routes(routes_df: pd.DataFrame) -> pd.DataFrame:
+    """Compute net passenger flow per port from route rows."""
     if routes_df.empty:
         return pd.DataFrame(
             columns=[
@@ -582,43 +656,26 @@ def _port_netflow_from_routes(routes_df: pd.DataFrame) -> pd.DataFrame:
     return port_net
 
 
-def _port_netflow_from_ports(ports_df: pd.DataFrame) -> pd.DataFrame:
-    expected_columns = [
-        "port_name",
-        "total_departing_passengers",
-        "total_arriving_passengers",
-        "total_departing_vehicles",
-        "total_arriving_vehicles",
-    ]
-    if ports_df.empty or "port_name" not in ports_df.columns:
-        return pd.DataFrame(columns=expected_columns)
-    return (
-        ports_df.groupby("port_name", as_index=False)[
-            [
-                "total_departing_passengers",
-                "total_arriving_passengers",
-                "total_departing_vehicles",
-                "total_arriving_vehicles",
-            ]
-        ]
-        .sum()
-        .sort_values(["total_departing_passengers", "total_arriving_passengers"], ascending=False)
-    )
-
-
 def _port_netflow_reconciliation(routes_df: pd.DataFrame, ports_df: pd.DataFrame) -> pd.DataFrame:
+    """Compare route-derived and port-derived passenger totals by port."""
     from_routes = _port_netflow_from_routes(routes_df).rename(
         columns={
             "total_departing_passengers": "dep_routes",
             "total_arriving_passengers": "arr_routes",
         }
     )[["port_name", "dep_routes", "arr_routes"]]
-    from_ports = _port_netflow_from_ports(ports_df).rename(
-        columns={
-            "total_departing_passengers": "dep_ports",
-            "total_arriving_passengers": "arr_ports",
-        }
-    )[["port_name", "dep_ports", "arr_ports"]]
+
+    if ports_df.empty or "port_name" not in ports_df.columns:
+        from_ports = pd.DataFrame(columns=["port_name", "dep_ports", "arr_ports"])
+    else:
+        from_ports = (
+            ports_df.groupby("port_name", as_index=False)[
+                ["total_departing_passengers", "total_arriving_passengers"]
+            ]
+            .sum()
+            .rename(columns={"total_departing_passengers": "dep_ports", "total_arriving_passengers": "arr_ports"})
+        )[["port_name", "dep_ports", "arr_ports"]]
+
     merged = from_routes.merge(from_ports, on="port_name", how="outer").fillna(0)
     merged["net_routes"] = merged["arr_routes"] - merged["dep_routes"]
     merged["net_ports"] = merged["arr_ports"] - merged["dep_ports"]
@@ -630,6 +687,7 @@ def _port_netflow_reconciliation(routes_df: pd.DataFrame, ports_df: pd.DataFrame
 
 
 def _fmt_compact(value: float | int) -> str:
+    """Format a large number into a compact string like 1.2M or 45k."""
     v = float(value)
     a = abs(v)
     if a >= 1_000_000:
@@ -642,6 +700,7 @@ def _fmt_compact(value: float | int) -> str:
 
 
 def _pct_delta(curr: float, baseline: float, suffix: str = "vs Avg") -> tuple[str, str]:
+    """Return a formatted delta label and directional class for KPI cards."""
     if baseline == 0:
         return f"0.0% {suffix}", "flat"
     delta = (curr - baseline) / baseline * 100
@@ -652,12 +711,14 @@ def _pct_delta(curr: float, baseline: float, suffix: str = "vs Avg") -> tuple[st
 
 
 def _safe_share(numerator: float, denominator: float) -> float:
+    """Divide two numbers safely, returning 0 if the denominator is zero."""
     if denominator == 0:
         return 0.0
     return (numerator / denominator) * 100
 
 
 def _window_filter(df: pd.DataFrame, start: pd.Timestamp, end: pd.Timestamp, date_col: str = "service_date") -> pd.DataFrame:
+    """Return rows within an inclusive date range."""
     return df[(df[date_col] >= start) & (df[date_col] <= end)].copy()
 
 
@@ -668,6 +729,7 @@ def _compute_window_metrics(
     start: pd.Timestamp,
     end: pd.Timestamp,
 ) -> dict[str, float]:
+    """Compute the core KPI metrics for a single comparison window."""
     daily_w = _window_filter(daily_df, start, end, "service_date")
     routes_w = _window_filter(routes_df, start, end, "service_date")
     ports_w = _window_filter(ports_df, start, end, "service_date")
@@ -709,6 +771,7 @@ def _compute_window_metrics(
 
 
 def _avg_of_windows(windows: list[dict[str, float]], key: str) -> float:
+    """Average a metric across non-empty comparison windows."""
     values = [w.get(key, 0.0) for w in windows]
     values = [v for v in values if v > 0]
     if not values:
@@ -717,6 +780,7 @@ def _avg_of_windows(windows: list[dict[str, float]], key: str) -> float:
 
 
 def _icon_svg(name: str) -> str:
+    """Return the glyph used by a KPI card icon slot."""
     icons = {
         "passengers": "👥",
         "vehicles": "🚗",
@@ -728,6 +792,7 @@ def _icon_svg(name: str) -> str:
 
 
 def _section_header(title: str, note: str) -> None:
+    """Render a section title with a short explanatory note below it."""
     st.markdown(
         f"""
         <div class="panel-head">
@@ -742,6 +807,7 @@ def _section_header(title: str, note: str) -> None:
 
 
 def _trend_spec(daily: pd.DataFrame) -> dict:
+    """Build the Vega-Lite specification for the traffic pulse trend chart."""
     chart = daily.copy()
     chart["service_date"] = pd.to_datetime(chart["service_date"])
     chart = chart.rename(columns={"service_date": "period", "rows_count": "sailings"})
@@ -794,6 +860,7 @@ def _trend_spec(daily: pd.DataFrame) -> dict:
 
 
 def _bar_spec(df: pd.DataFrame, y_field: str, x_field: str, color: str) -> dict:
+    """Build a reusable horizontal bar-chart Vega-Lite specification."""
     return {
         "height": 315,
         "background": "transparent",
@@ -820,48 +887,8 @@ def _bar_spec(df: pd.DataFrame, y_field: str, x_field: str, color: str) -> dict:
     }
 
 
-def _weekly_spec(df: pd.DataFrame) -> dict:
-    d = df.copy()
-    d["week_start"] = pd.to_datetime(d["week_start"])
-    return {
-        "height": 300,
-        "background": "transparent",
-        "data": {"values": d.to_dict("records")},
-        "config": {
-            "view": {"stroke": None},
-            "axis": {
-                "labelColor": "#CBD5E1",
-                "titleColor": "#E2E8F0",
-                "gridColor": "rgba(120,146,184,0.38)",
-                "domainColor": "rgba(148,176,214,0.78)",
-                "tickColor": "rgba(148,176,214,0.78)",
-                "tickCount": 5,
-                "labelFontSize": 11,
-                "titleFontSize": 11,
-                "gridDash": [3, 3],
-            },
-        },
-        "layer": [
-            {
-                "mark": {"type": "bar", "cornerRadiusTopLeft": 7, "cornerRadiusTopRight": 7, "color": CHART_PRIMARY_BAR_COLOR},
-                "encoding": {
-                    "x": {"field": "week_start", "type": "temporal", "axis": {"title": None, "format": "%d %b"}},
-                    "y": {"field": "total_passengers", "type": "quantitative", "axis": {"title": "Passengers", "format": "~s"}},
-                },
-            },
-            {
-                "mark": {"type": "line", "interpolate": "monotone", "strokeWidth": 2.4, "color": CHART_WEEKLY_VEHICLE_LINE_COLOR},
-                "encoding": {
-                    "x": {"field": "week_start", "type": "temporal"},
-                    "y": {"field": "total_vehicles", "type": "quantitative", "axis": {"title": "Vehicles", "orient": "right", "format": "~s"}},
-                },
-            },
-        ],
-        "resolve": {"scale": {"y": "independent"}},
-    }
-
-
 def _weekday_heatmap_spec(daily: pd.DataFrame) -> dict:
+    """Build the weekday heatmap specification from daily passenger totals."""
     d = daily[["service_date", "total_passengers"]].copy()
     d["service_date"] = pd.to_datetime(d["service_date"])
     d["weekday"] = d["service_date"].dt.day_name().str[:3]
@@ -911,10 +938,12 @@ def _focus_concentration_data(
     top_corridors: int = 3,
     grain: str = "daily",
 ) -> pd.DataFrame:
+    """Aggregate top-corridor concentration over time at the requested grain."""
     if routes.empty or daily.empty:
         return pd.DataFrame(columns=["service_date", "total_passengers", "top_share_pct"])
 
     def _period_start(date_series: pd.Series, period_grain: str) -> pd.Series:
+        """Normalize timestamps to the start of the selected reporting period."""
         dt = pd.to_datetime(date_series)
         if period_grain == "weekly":
             return dt.dt.to_period("W-SUN").dt.start_time
@@ -950,6 +979,7 @@ def _focus_concentration_data(
 
 
 def _focus_concentration_spec(concentration_df: pd.DataFrame, grain: str = "daily") -> dict:
+    """Build the Vega-Lite specification for the corridor concentration view."""
     period_grain = str(grain).lower()
     if period_grain not in {"daily", "weekly", "monthly"}:
         period_grain = "daily"
@@ -1000,6 +1030,7 @@ def _focus_concentration_spec(concentration_df: pd.DataFrame, grain: str = "dail
 
 
 def _corridor_efficiency_spec(top_routes: pd.DataFrame, scope_total_passengers: float) -> dict:
+    """Build the corridor efficiency scatter plot spec."""
     d = top_routes.copy()
     if d.empty:
         return {"height": 300, "data": {"values": []}}
@@ -1007,11 +1038,37 @@ def _corridor_efficiency_spec(top_routes: pd.DataFrame, scope_total_passengers: 
     d["vehicles_per_sailing"] = (d["vehicles"] / d["sailings"].replace(0, pd.NA)).fillna(0)
     d = d[(d["passengers_per_sailing"] > 0) & (d["vehicles_per_sailing"] > 0)].copy()
     total_pax = float(scope_total_passengers)
-    d["share_pct"] = (d["passengers"] / total_pax * 100) if total_pax > 0 else 0.0
+    d["share_pct"] = (d["passengers"] / total_pax * 100) if total_pax > 0 else pd.Series(0.0, index=d.index)
+
+    # Preserve exact values for tooltips before jittering positions
+    d["pax_per_sailing_exact"] = d["passengers_per_sailing"]
+    d["veh_per_sailing_exact"] = d["vehicles_per_sailing"]
+
+    # Apply small deterministic jitter in log space so overlapping corridors
+    # (e.g. A→B and B→A with near-identical efficiency) become visually separable.
+    import numpy as np
+    rng = np.random.default_rng(42)  # fixed seed = stable layout on re-render
+    x_log = np.log10(d["passengers_per_sailing"].clip(lower=1e-9))
+    y_log = np.log10(d["vehicles_per_sailing"].clip(lower=1e-9))
+    x_range = x_log.max() - x_log.min() if x_log.max() != x_log.min() else 1.0
+    y_range = y_log.max() - y_log.min() if y_log.max() != y_log.min() else 1.0
+    jitter_scale = 0.018  # ~1.8% of axis range in log space
+    d["passengers_per_sailing"] = d["passengers_per_sailing"] * 10 ** (
+        rng.uniform(-jitter_scale * x_range, jitter_scale * x_range, size=len(d))
+    )
+    d["vehicles_per_sailing"] = d["vehicles_per_sailing"] * 10 ** (
+        rng.uniform(-jitter_scale * y_range, jitter_scale * y_range, size=len(d))
+    )
     return {
         "height": 300,
         "background": "transparent",
         "data": {"values": d.to_dict("records")},
+        "params": [
+            {
+                "name": "corridor_select",
+                "select": {"type": "point", "on": "click", "clear": "dblclick"},
+            }
+        ],
         "config": {
             "view": {"stroke": None},
             "axis": {
@@ -1025,7 +1082,13 @@ def _corridor_efficiency_spec(top_routes: pd.DataFrame, scope_total_passengers: 
                 "gridDash": [3, 3],
             },
         },
-        "mark": {"type": "point", "filled": True, "opacity": 0.96, "stroke": CHART_POINT_STROKE, "strokeWidth": 1.4},
+        "mark": {
+            "type": "point",
+            "filled": True,
+            "stroke": CHART_POINT_STROKE,
+            "strokeWidth": 1.4,
+            "cursor": "pointer",
+        },
         "encoding": {
             "x": {
                 "field": "passengers_per_sailing",
@@ -1039,17 +1102,32 @@ def _corridor_efficiency_spec(top_routes: pd.DataFrame, scope_total_passengers: 
                 "scale": {"type": "log"},
                 "axis": {"title": "Vehicles per sailing (log)"},
             },
-            "size": {"field": "sailings", "type": "quantitative", "legend": {"title": "Sailings"}},
+            "size": {
+                "field": "sailings",
+                "type": "quantitative",
+                "legend": {"title": "Sailings"},
+                # Wider size range helps separate overlapping points visually
+                "scale": {"range": [40, 600]},
+            },
             "color": {
                 "field": "share_pct",
                 "type": "quantitative",
                 "scale": CHART_SEQUENTIAL_SCALE,
                 "legend": {"title": "Share %"},
             },
+            "opacity": {
+                "condition": {"param": "corridor_select", "empty": True, "value": 0.95},
+                "value": 0.15,
+            },
+            "strokeWidth": {
+                # Highlight selected point with a thicker stroke ring
+                "condition": {"param": "corridor_select", "empty": False, "value": 3.0},
+                "value": 1.4,
+            },
             "tooltip": [
                 {"field": "pair_label", "type": "nominal", "title": "Corridor"},
-                {"field": "passengers_per_sailing", "type": "quantitative", "title": "Passengers/sailing", "format": ".2f"},
-                {"field": "vehicles_per_sailing", "type": "quantitative", "title": "Vehicles/sailing", "format": ".2f"},
+                {"field": "pax_per_sailing_exact", "type": "quantitative", "title": "Passengers/sailing", "format": ".2f"},
+                {"field": "veh_per_sailing_exact", "type": "quantitative", "title": "Vehicles/sailing", "format": ".2f"},
                 {"field": "sailings", "type": "quantitative", "title": "Sailings", "format": ",.0f"},
                 {"field": "share_pct", "type": "quantitative", "title": "Share %", "format": ".1f"},
             ],
@@ -1058,6 +1136,7 @@ def _corridor_efficiency_spec(top_routes: pd.DataFrame, scope_total_passengers: 
 
 
 def _port_netflow_spec(port_rank: pd.DataFrame) -> dict:
+    """Build the diverging bar-chart specification for passenger port netflow."""
     d = port_rank[["port_name", "total_departing_passengers", "total_arriving_passengers"]].copy()
     d["net_flow"] = d["total_arriving_passengers"] - d["total_departing_passengers"]
     d["abs_net"] = d["net_flow"].abs()
@@ -1148,64 +1227,8 @@ def _port_netflow_spec(port_rank: pd.DataFrame) -> dict:
     }
 
 
-def _weekday_profile_spec(daily: pd.DataFrame) -> dict:
-    weekday_order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-    d = daily[["service_date", "total_passengers"]].copy()
-    d["service_date"] = pd.to_datetime(d["service_date"])
-    d["total_passengers"] = pd.to_numeric(d["total_passengers"], errors="coerce").fillna(0.0)
-
-    # Always compute the weekday profile from daily totals in the currently scoped dataset.
-    daily_totals = (
-        d.groupby("service_date", as_index=False)["total_passengers"]
-        .sum()
-        .sort_values("service_date")
-    )
-    daily_totals["weekday"] = daily_totals["service_date"].dt.day_name().str[:3]
-
-    profile = (
-        daily_totals.groupby("weekday", as_index=False)["total_passengers"]
-        .mean()
-        .rename(columns={"total_passengers": "avg_passengers"})
-        .set_index("weekday")
-        .reindex(weekday_order)
-        .reset_index()
-    )
-    profile["avg_passengers"] = pd.to_numeric(profile["avg_passengers"], errors="coerce").fillna(0.0)
-    return {
-        "height": 260,
-        "background": "transparent",
-        "data": {"values": profile.to_dict("records")},
-        "config": {
-            "view": {"stroke": None},
-            "axis": {
-                "labelColor": "#CBD5E1",
-                "titleColor": "#E2E8F0",
-                "gridColor": "rgba(120,146,184,0.36)",
-                "domainColor": "rgba(148,176,214,0.78)",
-                "tickColor": "rgba(148,176,214,0.78)",
-                "labelFontSize": 11,
-                "titleFontSize": 11,
-                "gridDash": [3, 3],
-            },
-        },
-        "mark": {"type": "bar", "cornerRadiusTopLeft": 5, "cornerRadiusTopRight": 5, "color": CHART_PRIMARY_BAR_COLOR},
-        "encoding": {
-            "x": {
-                "field": "weekday",
-                "type": "ordinal",
-                "sort": weekday_order,
-                "axis": {"title": None},
-            },
-            "y": {"field": "avg_passengers", "type": "quantitative", "axis": {"title": "Avg passengers", "format": "~s"}},
-            "tooltip": [
-                {"field": "weekday", "type": "ordinal", "title": "Weekday"},
-                {"field": "avg_passengers", "type": "quantitative", "title": "Avg passengers", "format": ",.0f"},
-            ],
-        },
-    }
-
-
 def _weekday_profile_verify(daily: pd.DataFrame) -> tuple[pd.DataFrame, dict[str, object]]:
+    """Compute weekday traffic profile stats for the verification view."""
     weekday_order = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
     empty = pd.DataFrame(columns=["weekday", "avg_passengers", "day_count", "total_passengers"])
     if daily.empty:
@@ -1256,40 +1279,48 @@ def _weekday_profile_verify(daily: pd.DataFrame) -> tuple[pd.DataFrame, dict[str
     return weekday_stats, summary
 
 
-def _build_agent_fallback_lines(
+def _timeseries_verify(
+    df: pd.DataFrame,
     *,
-    kpi_window_text: str,
-    baseline_scope_text: str,
-    pax_val: float,
-    veh_val: float,
-    route_rank: pd.DataFrame,
-    port_rank: pd.DataFrame,
-    congestion: float,
-    daily: pd.DataFrame,
-) -> list[str]:
-    lines = [
-        f"KPI window ({kpi_window_text}): {_fmt_compact(pax_val)} passengers, {_fmt_compact(veh_val)} vehicles.",
-        f"Baseline scope: {baseline_scope_text}.",
-        f"Top corridor: {route_rank.iloc[0]['pair_label'] if not route_rank.empty else 'No data'}.",
-        f"Port flow leader: {port_rank.iloc[0]['port_name'] if not port_rank.empty else 'No data'}.",
-        f"Congestion index: {congestion:.0f}%.",
-    ]
+    date_col: str,
+    passengers_col: str,
+    vehicles_col: str,
+    rows_col: str,
+) -> dict[str, object]:
+    """Summarize a time series so chart totals can be cross-checked in the UI."""
+    if df.empty or date_col not in df.columns:
+        return {
+            "start": "N/A",
+            "end": "N/A",
+            "points": 0,
+            "passengers": 0.0,
+            "vehicles": 0.0,
+            "sailings": 0.0,
+        }
 
-    if not daily.empty and "service_date" in daily.columns and "total_passengers" in daily.columns:
-        trend_df = daily[["service_date", "total_passengers"]].copy()
-        trend_df["service_date"] = pd.to_datetime(trend_df["service_date"], errors="coerce")
-        trend_df["total_passengers"] = pd.to_numeric(trend_df["total_passengers"], errors="coerce").fillna(0)
-        trend_df = trend_df.dropna(subset=["service_date"]).sort_values("service_date")
-        if len(trend_df) >= 14:
-            recent_avg = float(trend_df.tail(7)["total_passengers"].mean())
-            prior_avg = float(trend_df.iloc[-14:-7]["total_passengers"].mean())
-            if prior_avg > 0:
-                delta_pct = ((recent_avg - prior_avg) / prior_avg) * 100.0
-                lines.append(f"Latest 7-day passenger average vs prior 7-day window: {delta_pct:+.1f}%.")
+    scoped = df.copy()
+    scoped[date_col] = pd.to_datetime(scoped[date_col], errors="coerce")
+    scoped = scoped.dropna(subset=[date_col])
+    for col in [passengers_col, vehicles_col, rows_col]:
+        if col in scoped.columns:
+            scoped[col] = pd.to_numeric(scoped[col], errors="coerce").fillna(0.0)
+        else:
+            scoped[col] = 0.0
 
-    return lines
+    return {
+        "start": scoped[date_col].min().date().isoformat(),
+        "end": scoped[date_col].max().date().isoformat(),
+        "points": int(scoped[date_col].nunique()),
+        "passengers": float(scoped[passengers_col].sum()),
+        "vehicles": float(scoped[vehicles_col].sum()),
+        "sailings": float(scoped[rows_col].sum()),
+    }
+
+
+
 
 def _render_deepen_insight(chart_id: str, snapshot: object | None) -> None:
+    """Render the optional expandable deepen-insight block for a chart."""
     state_key = f"show_deepen_{chart_id}"
     if st.button("Deepen this chart", key=f"btn_{state_key}"):
         st.session_state[state_key] = not bool(st.session_state.get(state_key, False))
@@ -1314,6 +1345,28 @@ def _render_deepen_insight(chart_id: str, snapshot: object | None) -> None:
     st.markdown("\n".join([f"- {escape(line)}" for line in lines]), unsafe_allow_html=True)
 
 
+def _agent_mode_label(mode: str | None) -> str:
+    """Convert an internal generation mode key to a short readable label."""
+    labels = {
+        "llm_overlay": "LLM report",
+        "deterministic_skip": "Deterministic report",
+        "deterministic_no_api_key": "Deterministic report",
+        "deterministic_llm_error": "Deterministic report",
+        "deterministic_sql": "Deterministic report",
+    }
+    return labels.get(str(mode or "").strip(), "Report")
+
+
+def _format_snapshot_age(hours_since: float | None) -> str:
+    """Format snapshot freshness as a short relative-age label."""
+    if hours_since is None:
+        return "Snapshot unavailable"
+    minutes = max(1, int(round(hours_since * 60)))
+    if minutes < 60:
+        return f"Updated {minutes}m ago"
+    return f"Updated {hours_since:.1f}h ago"
+
+
 _inject_styles()
 
 try:
@@ -1334,13 +1387,13 @@ min_date = pd.to_datetime(bounds_df.iloc[0]["min_date"]).date()
 max_date = pd.to_datetime(bounds_df.iloc[0]["max_date"]).date()
 default_start = max(min_date, max_date - pd.Timedelta(days=89))
 default_end = max_date
+analytics_preset_options = ["Last 30D", "Last 90D", "YTD", "Custom"]
 
 try:
     route_options, port_options = load_filter_options()
 except Exception:
     route_options, port_options = ["All routes"], ["All ports"]
 
-preset_options = ["Last 30D", "Last 90D", "YTD", "Custom"]
 
 with st.sidebar:
     st.markdown('<div class="brand"><h3 class="brand-title">THALASSA<span>GRID</span></h3><div class="brand-sub">MARITIME INTEL PLATFORM</div></div>', unsafe_allow_html=True)
@@ -1357,6 +1410,9 @@ with st.sidebar:
     if current_page != st.session_state["active_page"]:
         st.session_state["active_page"] = current_page
     selected_index = 0 if st.session_state["active_page"] == "dashboard" else 1
+
+    qp_preset_raw = qp.get("preset")
+    qp_preset = qp_preset_raw[0] if isinstance(qp_preset_raw, list) else qp_preset_raw
 
     page_choice = option_menu(
         menu_title=None,
@@ -1413,8 +1469,6 @@ with st.sidebar:
     qp_end_raw = qp.get("end")
     qp_start = qp_start_raw[0] if isinstance(qp_start_raw, list) else qp_start_raw
     qp_end = qp_end_raw[0] if isinstance(qp_end_raw, list) else qp_end_raw
-    qp_preset_raw = qp.get("preset")
-    qp_preset = qp_preset_raw[0] if isinstance(qp_preset_raw, list) else qp_preset_raw
     qp_grain_raw = qp.get("grain")
     qp_grain = qp_grain_raw[0] if isinstance(qp_grain_raw, list) else qp_grain_raw
     qp_top_n_raw = qp.get("top_n")
@@ -1426,7 +1480,7 @@ with st.sidebar:
 
     if "applied_filters" not in st.session_state:
         init_preset = str(qp_preset or "Last 90D")
-        if init_preset not in preset_options:
+        if init_preset not in analytics_preset_options:
             init_preset = "Last 90D"
 
         init_start, init_end = _resolve_preset_dates(init_preset, max_date)
@@ -1475,8 +1529,8 @@ with st.sidebar:
         with st.form("global_filters"):
             date_preset = st.selectbox(
                 "Date preset",
-                options=preset_options,
-                index=preset_options.index(current_filters["preset"]),
+                options=analytics_preset_options,
+                index=analytics_preset_options.index(current_filters.get("preset", "Last 90D")),
             )
 
             if date_preset == "Custom":
@@ -1524,18 +1578,16 @@ with st.sidebar:
             st.query_params["port"] = port_filter
             st.rerun()
     else:
-        st.markdown("**Scope**")
-        st.caption(f"Dashboard is fixed to network-wide last 90 days: {default_start.strftime('%d %b %Y')} -> {default_end.strftime('%d %b %Y')}")
+        pass
 
 applied_filters = st.session_state["applied_filters"]
 if active_page == "dashboard":
     selected_start = default_start
     selected_end = default_end
     top_n = 10
-    selected_grain = "weekly"
+    selected_grain = "daily"
     selected_route = "All routes"
     selected_port = "All ports"
-    scope_label = "Network-wide fixed scope"
 else:
     selected_start = applied_filters["start"]
     selected_end = applied_filters["end"]
@@ -1543,7 +1595,6 @@ else:
     selected_grain = str(applied_filters["grain"]).lower()
     selected_route = str(applied_filters["route"])
     selected_port = str(applied_filters["port"])
-    scope_label = "User-selected exploratory scope"
 
 try:
     daily = load_daily(selected_start.isoformat(), selected_end.isoformat())
@@ -1595,13 +1646,22 @@ baseline_windows: list[dict[str, float]] = []
 baseline_ranges: list[tuple[pd.Timestamp, pd.Timestamp]] = []
 anchor_end = current_start - pd.Timedelta(days=1)
 data_min = pd.to_datetime(daily["service_date"]).min()
-for i in range(8):
-    win_end = anchor_end - pd.Timedelta(days=7 * i)
-    win_start = win_end - pd.Timedelta(days=6)
-    if win_start < data_min:
-        continue
-    baseline_ranges.append((win_start, win_end))
-    baseline_windows.append(_compute_window_metrics(daily, routes, ports, win_start, win_end))
+view_start = pd.to_datetime(selected_start)
+view_end = pd.to_datetime(selected_end)
+
+if anchor_end >= view_start:
+    baseline_full_weeks_start = anchor_end - pd.Timedelta(days=55)
+    if baseline_full_weeks_start >= view_start:
+        for i in range(8):
+            win_end = anchor_end - pd.Timedelta(days=7 * i)
+            win_start = win_end - pd.Timedelta(days=6)
+            if win_start < view_start:
+                continue
+            baseline_ranges.append((win_start, win_end))
+            baseline_windows.append(_compute_window_metrics(daily, routes, ports, win_start, win_end))
+    else:
+        baseline_ranges.append((view_start, anchor_end))
+        baseline_windows.append(_compute_window_metrics(daily, routes, ports, view_start, anchor_end))
 
 pax_val = current_metrics["pax"]
 veh_val = current_metrics["veh"]
@@ -1618,21 +1678,27 @@ top_port_flow_avg = _avg_of_windows(baseline_windows, "top_port_flow")
 sail_avg = _avg_of_windows(baseline_windows, "sail")
 reference_peak = float(daily["rows_count"].quantile(0.95)) if not daily.empty else 0.0
 congestion = min(_safe_share(float(last7["rows_count"].mean()) if not last7.empty else 0.0, reference_peak), 100.0)
-kpi_window_text = f"{current_start.strftime('%d %b %Y')} -> {current_end.strftime('%d %b %Y')}"
+current_period_text = f"{current_start.strftime('%d %b %Y')} -> {current_end.strftime('%d %b %Y')}"
 if baseline_ranges:
-    baseline_scope_text = (
-        f"{len(baseline_ranges)} x 7-day windows: "
-        f"{baseline_ranges[-1][0].strftime('%d %b %Y')} -> {baseline_ranges[0][1].strftime('%d %b %Y')}"
-    )
+    if len(baseline_ranges) >= 8:
+        comparison_baseline_text = (
+            f"{len(baseline_ranges)} x 7-day windows: "
+            f"{baseline_ranges[-1][0].strftime('%d %b %Y')} -> {baseline_ranges[0][1].strftime('%d %b %Y')}"
+        )
+    else:
+        comparison_baseline_text = (
+            f"{baseline_ranges[0][0].strftime('%d %b %Y')} -> "
+            f"{baseline_ranges[0][1].strftime('%d %b %Y')}"
+        )
 else:
-    baseline_scope_text = "No baseline windows available"
+    comparison_baseline_text = "No comparison baseline available"
 
 metric_tooltips = {
-    "Passenger Throughput": f"Sum(total_passengers) in KPI Window ({kpi_window_text}). Delta compares to prior rolling 7-day average windows.",
-    "Vehicle Transit": f"Sum(total_vehicles) in KPI Window ({kpi_window_text}). Delta compares to prior rolling 7-day average windows.",
-    "Active Corridors": f"Mean daily distinct route-pairs in KPI Window ({kpi_window_text}). Delta compares to baseline windows.",
-    "Top Corridor Share": f"Top corridor passengers / total passengers in KPI Window ({kpi_window_text}).",
-    "Port Flow Leader": f"Max port (departing + arriving passengers) in KPI Window ({kpi_window_text}).",
+    "Passenger Throughput": f"Sum(total_passengers) in Current Period ({current_period_text}). Delta compares to the comparison baseline.",
+    "Vehicle Transit": f"Sum(total_vehicles) in Current Period ({current_period_text}). Delta compares to the comparison baseline.",
+    "Active Corridors": f"Mean daily distinct route-pairs in Current Period ({current_period_text}). Delta compares to baseline windows.",
+    "Top Corridor Share": f"Top corridor passengers / total passengers in Current Period ({current_period_text}).",
+    "Port Flow Leader": f"Max port (departing + arriving passengers) in Current Period ({current_period_text}).",
 }
 
 card_data = [
@@ -1659,8 +1725,29 @@ port_rank = (
     .sort_values(["total_departing_passengers", "total_arriving_passengers"], ascending=False)
 )
 
+routes_kpi = routes[
+    (routes["service_date"] >= pd.Timestamp(current_start)) & (routes["service_date"] <= pd.Timestamp(current_end))
+].copy()
+ports_kpi = ports[
+    (ports["service_date"] >= pd.Timestamp(current_start)) & (ports["service_date"] <= pd.Timestamp(current_end))
+].copy()
+
+route_rank_kpi = (
+    routes_kpi.groupby(["departure_port", "arrival_port"], as_index=False)[["traffic_record_count", "total_passengers", "total_vehicles"]]
+    .sum()
+    .rename(columns={"traffic_record_count": "sailings", "total_passengers": "passengers", "total_vehicles": "vehicles"})
+    .sort_values(["passengers", "vehicles"], ascending=False)
+)
+route_rank_kpi["pair_label"] = route_rank_kpi["departure_port"].fillna("Unknown") + " -> " + route_rank_kpi["arrival_port"].fillna("Unknown")
+
+port_rank_kpi = (
+    ports_kpi.groupby("port_name", as_index=False)[["total_departing_passengers", "total_arriving_passengers", "total_departing_vehicles", "total_arriving_vehicles"]]
+    .sum()
+    .sort_values(["total_departing_passengers", "total_arriving_passengers"], ascending=False)
+)
+
 corridor_focus = _focus_concentration_data(daily, routes, top_corridors=3, grain=selected_grain)
-top_routes_scatter = route_rank.head(max(top_n, 14)).copy()
+top_routes_scatter = route_rank.head(top_n).copy()  # respects ranking depth slider
 top_ports_net = _port_netflow_from_routes(routes).head(top_n).copy()
 
 agent_context = build_agent_context(
@@ -1682,50 +1769,63 @@ agent_context = build_agent_context(
 agent_snapshot = agent_context.panel_snapshot
 agent_snapshot_freshness = agent_context.freshness
 notable_change = agent_context.notable_change
-agent_llm_gate_label = "LLM gate: trigger" if notable_change.should_trigger_llm else "LLM gate: skip"
-agent_llm_gate_reasons = notable_change.reasons
+snapshot_range_match = False
+if agent_snapshot is not None and agent_snapshot.kpi_start and agent_snapshot.kpi_end:
+    try:
+        snapshot_start = pd.to_datetime(agent_snapshot.kpi_start).date()
+        snapshot_end = pd.to_datetime(agent_snapshot.kpi_end).date()
+        snapshot_range_match = snapshot_start == current_start.date() and snapshot_end == current_end.date()
+    except Exception:
+        snapshot_range_match = False
 
-agent_title = "Harbor Intelligence"
-agent_subtitle = "Rule-based narrative scaffold"
-agent_lines = _build_agent_fallback_lines(
-    kpi_window_text=kpi_window_text,
-    baseline_scope_text=baseline_scope_text,
-    pax_val=pax_val,
-    veh_val=veh_val,
-    route_rank=route_rank,
-    port_rank=port_rank,
-    congestion=congestion,
-    daily=daily,
+use_cached_auto_panel = (
+    active_page == "dashboard"
+    and selected_route == "All routes"
+    and selected_port == "All ports"
+    and snapshot_range_match
 )
 
-if agent_snapshot is not None:
-    agent_title = agent_snapshot.title
+agent_card_title = "Maritime Intelligence"
+agent_subtitle = "Deterministic report"
+agent_lines = build_deterministic_report_lines(
+    current_period_text=current_period_text,
+    comparison_baseline_text=comparison_baseline_text,
+    pax_val=pax_val,
+    veh_val=veh_val,
+    route_rank=route_rank_kpi,
+    port_rank=port_rank_kpi,
+    congestion=congestion,
+    daily=daily,
+    routes=routes,
+)
+
+if use_cached_auto_panel and agent_snapshot is not None:
+    agent_card_title = agent_snapshot.title or "Maritime Intelligence"
     agent_lines = agent_snapshot.lines
+    subtitle_parts = [_agent_mode_label(agent_snapshot.generation_mode)]
     if agent_snapshot.generated_at:
-        agent_subtitle = f"Snapshot cache | Generated {agent_snapshot.generated_at}"
-    else:
-        agent_subtitle = "Snapshot cache"
+        subtitle_parts.append(f"Generated {agent_snapshot.generated_at}")
+    agent_subtitle = " | ".join(subtitle_parts)
 
-agent_report = "\\n\\n".join(agent_lines)
+agent_report_paragraphs = [line for line in agent_lines if str(line).strip()]
+agent_report_html = "".join(f"<p>{escape(line)}</p>" for line in agent_report_paragraphs)
 
-deepen_traffic_pulse_snapshot = agent_context.deepen_traffic_pulse_snapshot
-deepen_top_corridors_snapshot = agent_context.deepen_top_corridors_snapshot
-deepen_port_balance_snapshot = agent_context.deepen_port_balance_snapshot
+# TODO: deepen_chart feature not yet implemented
+# deepen_traffic_pulse_snapshot = agent_context.deepen_traffic_pulse_snapshot
+# deepen_top_corridors_snapshot = agent_context.deepen_top_corridors_snapshot
+# deepen_port_balance_snapshot = agent_context.deepen_port_balance_snapshot
 
 
 if active_page == "dashboard":
     st.markdown(
         f"""
         <div class="topbar">
-            <div>
-                <h1 class="title">Thalassa Maritime Operations</h1>
-            </div>
-            <div class="live"><span class="dot"></span><span>Live Stream</span></div>
+            <div class="live"><span class="dot"></span><span>Live</span></div>
         </div>
         <div class="mini-grid">
             <div class="mini"><div class="k">Coverage</div><div class="v">{min_date.strftime('%d %b %Y')} -> {max_date.strftime('%d %b %Y')}</div></div>
-            <div class="mini"><div class="k">Filter Window</div><div class="v">{selected_start.strftime('%d %b %Y')} -> {selected_end.strftime('%d %b %Y')}</div></div>
-            <div class="mini"><div class="k">Scope</div><div class="v">{escape(scope_label)}</div></div>
+            <div class="mini"><div class="k">View Window</div><div class="v">{selected_start.strftime('%d %b %Y')} -> {selected_end.strftime('%d %b %Y')}</div></div>
+            <div class="mini"><div class="k">Comparison Baseline</div><div class="v">{escape(comparison_baseline_text)}</div></div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -1750,7 +1850,6 @@ if active_page == "dashboard":
         )
     kpi_cards_html.append("</div>")
     st.markdown("".join(kpi_cards_html), unsafe_allow_html=True)
-    st.caption(f"Baseline for KPI deltas: {baseline_scope_text}.")
 
 if active_page == "dashboard":
     left, right = st.columns((1.75, 1), gap="large")
@@ -1759,27 +1858,87 @@ if active_page == "dashboard":
         with st.container(border=True):
             _section_header("Traffic Pulse", f"{selected_grain.title()} trend for the selected filter window.")
             if selected_grain == "daily":
+                pulse_df = daily[["service_date", "rows_count", "total_passengers", "total_vehicles"]].copy()
                 st.vega_lite_chart(_trend_spec(daily), width="stretch")
+                verify = _timeseries_verify(
+                    daily,
+                    date_col="service_date",
+                    passengers_col="total_passengers",
+                    vehicles_col="total_vehicles",
+                    rows_col="rows_count",
+                )
             elif selected_grain == "weekly":
                 if weekly.empty:
                     st.markdown('<div class="empty">No weekly rows in selected range. Showing daily fallback.</div>', unsafe_allow_html=True)
+                    pulse_df = daily[["service_date", "rows_count", "total_passengers", "total_vehicles"]].copy()
                     st.vega_lite_chart(_trend_spec(daily), width="stretch")
+                    verify = _timeseries_verify(
+                        daily,
+                        date_col="service_date",
+                        passengers_col="total_passengers",
+                        vehicles_col="total_vehicles",
+                        rows_col="rows_count",
+                    )
                 else:
                     weekly_pulse = weekly.rename(columns={"week_start": "service_date"})[
                         ["service_date", "rows_count", "total_passengers", "total_vehicles"]
                     ].copy()
+                    pulse_df = weekly_pulse
                     st.vega_lite_chart(_trend_spec(weekly_pulse), width="stretch")
+                    verify = _timeseries_verify(
+                        weekly_pulse,
+                        date_col="service_date",
+                        passengers_col="total_passengers",
+                        vehicles_col="total_vehicles",
+                        rows_col="rows_count",
+                    )
             else:
                 if monthly.empty:
                     st.markdown('<div class="empty">No monthly rows in selected range. Showing daily fallback.</div>', unsafe_allow_html=True)
+                    pulse_df = daily[["service_date", "rows_count", "total_passengers", "total_vehicles"]].copy()
                     st.vega_lite_chart(_trend_spec(daily), width="stretch")
+                    verify = _timeseries_verify(
+                        daily,
+                        date_col="service_date",
+                        passengers_col="total_passengers",
+                        vehicles_col="total_vehicles",
+                        rows_col="rows_count",
+                    )
                 else:
                     monthly_pulse = monthly.rename(columns={"year_month": "service_date"})[
                         ["service_date", "rows_count", "total_passengers", "total_vehicles"]
                     ].copy()
+                    pulse_df = monthly_pulse
                     st.vega_lite_chart(_trend_spec(monthly_pulse), width="stretch")
+                    verify = _timeseries_verify(
+                        monthly_pulse,
+                        date_col="service_date",
+                        passengers_col="total_passengers",
+                        vehicles_col="total_vehicles",
+                        rows_col="rows_count",
+                    )
 
-            _render_deepen_insight("traffic_pulse", deepen_traffic_pulse_snapshot)
+            with st.expander("Verify traffic pulse numbers"):
+                st.caption(
+                    f"Source: {selected_grain} grain | "
+                    f"{verify['start']} -> {verify['end']} | "
+                    f"Points: {int(verify['points'])} | "
+                    f"Total passengers: {float(verify['passengers']):,.0f} | "
+                    f"Total vehicles: {float(verify['vehicles']):,.0f} | "
+                    f"Total sailings: {float(verify['sailings']):,.0f}"
+                )
+                st.dataframe(
+                    pulse_df.rename(columns={
+                        "service_date": "Period",
+                        "rows_count": "Sailings",
+                        "total_passengers": "Passengers",
+                        "total_vehicles": "Vehicles",
+                    }),
+                    hide_index=True,
+                    width="stretch",
+                )
+
+            # _render_deepen_insight("traffic_pulse", deepen_traffic_pulse_snapshot)
 
         with st.container(border=True):
             _section_header("Top Corridors", "Highest passenger corridors in the selected date range.")
@@ -1788,30 +1947,59 @@ if active_page == "dashboard":
             else:
                 top_routes = route_rank.head(top_n)
                 st.vega_lite_chart(_bar_spec(top_routes, "pair_label", "passengers", CHART_ROUTE_BAR_COLOR), width="stretch")
+                with st.expander("Verify top corridors numbers"):
+                    st.dataframe(
+                        top_routes[["pair_label", "passengers", "vehicles", "sailings"]].rename(
+                            columns={
+                                "pair_label": "Corridor",
+                                "passengers": "Passengers",
+                                "vehicles": "Vehicles",
+                                "sailings": "Sailings",
+                            }
+                        ),
+                        hide_index=True,
+                        width="stretch",
+                    )
 
-            _render_deepen_insight("top_corridors", deepen_top_corridors_snapshot)
+            # _render_deepen_insight("top_corridors", deepen_top_corridors_snapshot)
 
     with right:
-        with st.container(border=True):
-            _section_header("Agent Card", "Auto facts, deltas, and anomalies from cached intelligence snapshots.")
-            if agent_snapshot_freshness.is_stale:
-                st.warning("Intelligence snapshots are stale or missing (no recent auto_panel snapshot in last 48 hours).")
-            elif agent_snapshot_freshness.hours_since_latest is not None:
-                st.caption(f"Snapshot freshness: {agent_snapshot_freshness.hours_since_latest:.1f}h since latest auto_panel snapshot.")
-            if agent_llm_gate_reasons:
-                st.caption(f"{agent_llm_gate_label} | " + "; ".join(agent_llm_gate_reasons))
-            else:
-                st.caption(f"{agent_llm_gate_label} | no notable change detected")
+        with st.container():
+            freshness_label = "Using live deterministic report for the current view."
+            if use_cached_auto_panel:
+                freshness_label = _format_snapshot_age(agent_snapshot_freshness.hours_since_latest)
+            report_period_label = f"Report period: {current_period_text}"
+            if use_cached_auto_panel and agent_snapshot is not None and agent_snapshot.kpi_start and agent_snapshot.kpi_end:
+                report_period_label = (
+                    f"Report period: {pd.to_datetime(agent_snapshot.kpi_start).strftime('%d %b %Y')} "
+                    f"-> {pd.to_datetime(agent_snapshot.kpi_end).strftime('%d %b %Y')}"
+                )
+
             st.markdown(
                 f"""
-                <div class="agent">
-                    <h4>{escape(agent_title)}</h4>
-                    <small>{escape(agent_subtitle)}</small>
-                    <pre>{escape(agent_report)}</pre>
+                <div class="agent-wrap">
+                    <div class="agent">
+                        <div class="agent-head">
+                            <div class="agent-icon">⚓</div>
+                            <div>
+                                <h4>{escape(agent_card_title)}</h4>
+                                <small>{escape(agent_subtitle)}</small>
+                            </div>
+                        </div>
+                        <div class="agent-flags">
+                            <span class="agent-flag">{escape(freshness_label)}</span>
+                            <span class="agent-flag">{escape(report_period_label)}</span>
+                        </div>
+                        <div class="agent-report">
+                            {agent_report_html}
+                        </div>
+                    </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
+            if use_cached_auto_panel and agent_snapshot_freshness.is_stale:
+                st.warning("Intelligence snapshots are stale or missing (no recent auto_panel snapshot in last 48 hours).")
         with st.container(border=True):
             _section_header("Port Balance", "Departure + arrival passenger totals by port.")
             if port_rank.empty:
@@ -1820,8 +2008,28 @@ if active_page == "dashboard":
                 ports_plot = port_rank.head(top_n).copy()
                 ports_plot["total"] = ports_plot["total_departing_passengers"] + ports_plot["total_arriving_passengers"]
                 st.vega_lite_chart(_bar_spec(ports_plot, "port_name", "total", CHART_PORT_BAR_COLOR), width="stretch")
+                with st.expander("Verify port balance numbers"):
+                    st.dataframe(
+                        ports_plot[
+                            [
+                                "port_name",
+                                "total_departing_passengers",
+                                "total_arriving_passengers",
+                                "total",
+                            ]
+                        ].rename(
+                            columns={
+                                "port_name": "Port",
+                                "total_departing_passengers": "Departing pax",
+                                "total_arriving_passengers": "Arriving pax",
+                                "total": "Total pax",
+                            }
+                        ),
+                        hide_index=True,
+                        width="stretch",
+                    )
 
-            _render_deepen_insight("port_balance", deepen_port_balance_snapshot)
+            # _render_deepen_insight("port_balance", deepen_port_balance_snapshot)
 
 else:
     top_corridor_label = route_rank.iloc[0]["pair_label"] if not route_rank.empty else "No data"
@@ -1873,7 +2081,7 @@ else:
     row2_left, row2_right = st.columns((1.25, 1), gap="large")
     with row2_left:
         with st.container(border=True):
-            _section_header("Corridor Efficiency Map", "Each point is a corridor sized by sailings and colored by share.")
+            _section_header("Corridor Efficiency Map", "Each point is a corridor sized by sailings and colored by share. Click to select, double-click to reset.")
             if top_routes_scatter.empty:
                 st.markdown('<div class="empty">No route rows for this range.</div>', unsafe_allow_html=True)
             else:
@@ -1916,14 +2124,9 @@ else:
                             hide_index=True,
                             width="stretch",
                         )
-                        legacy_top_ports = _port_netflow_from_ports(ports).head(top_n)["port_name"].tolist()
                         current_top_ports = top_ports_net["port_name"].tolist()
                         st.caption(
-                            "Legacy top ports (ranked by departures/arrivals): "
-                            + (", ".join(legacy_top_ports) if legacy_top_ports else "None")
-                        )
-                        st.caption(
-                            "Current top ports (ranked by absolute net flow): "
+                            "Top ports (ranked by absolute net flow): "
                             + (", ".join(current_top_ports) if current_top_ports else "None")
                         )
 

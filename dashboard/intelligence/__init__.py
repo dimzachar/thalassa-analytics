@@ -1,25 +1,77 @@
-from .detector import NotableChangeDecision, detect_notable_change
-from .panel import (
+"""Public exports for the intelligence package."""
+
+from .agents import (
+    build_auto_panel_source_snapshot,
+    build_deterministic_report_lines,
+    detect_notable_change,
+    generate_auto_panel_snapshot,
+    render_auto_panel_output,
+)
+from .config import LLM_PROVIDER, MAX_RETRIES, ModelConfig, get_generation_model
+from .llm_client import LLMClient, call_llm_with_retry, call_structured_with_retry, get_llm_client
+from .models import (
+    AgentContext,
     AgentInsightSnapshot,
+    AutoPanelActionCandidate,
+    AutoPanelCorridorMetric,
+    AutoPanelDelta,
+    AutoPanelKpis,
+    AutoPanelNarrativeOverlay,
+    AutoPanelOutput,
+    AutoPanelPortMetric,
+    AutoPanelScope,
+    AutoPanelSignal,
+    AutoPanelSourceSnapshot,
+    GenerationMeta,
+    NotableChangeDecision,
     SnapshotFreshness,
+    SnapshotPayload,
+)
+from .orchestrator import build_agent_context
+from .repositories import (
     build_data_version,
     build_filter_hash,
     load_agent_snapshot,
     load_latest_agent_snapshot,
     load_snapshot_freshness,
+    upsert_snapshot,
 )
-from .service import AgentContext, build_agent_context
 
 __all__ = [
     "AgentContext",
     "AgentInsightSnapshot",
     "SnapshotFreshness",
     "NotableChangeDecision",
+    "AutoPanelActionCandidate",
+    "AutoPanelCorridorMetric",
+    "AutoPanelDelta",
+    "AutoPanelKpis",
+    "AutoPanelNarrativeOverlay",
+    "AutoPanelOutput",
+    "AutoPanelPortMetric",
+    "AutoPanelScope",
+    "AutoPanelSignal",
+    "AutoPanelSourceSnapshot",
+    "GenerationMeta",
+    "SnapshotPayload",
     "build_agent_context",
     "build_data_version",
     "build_filter_hash",
     "detect_notable_change",
+    "generate_auto_panel_snapshot",
+    "build_deterministic_report_lines",
+    "build_auto_panel_source_snapshot",
+    "render_auto_panel_output",
+    "LLM_PROVIDER",
+    "MAX_RETRIES",
+    "ModelConfig",
+    "get_generation_model",
+    "LLMClient",
+    "get_llm_client",
+    "call_llm_with_retry",
+    "call_structured_with_retry",
     "load_agent_snapshot",
     "load_latest_agent_snapshot",
     "load_snapshot_freshness",
+    "upsert_snapshot",
 ]
