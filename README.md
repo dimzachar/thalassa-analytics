@@ -11,28 +11,53 @@ Thalassa is a production-style batch data engineering project for Greek maritime
 
 This repository is written to satisfy the spirit of the DE Zoomcamp course project: pick a real dataset, build an end-to-end pipeline, transform the data in a cloud warehouse, and expose it through a dashboard that is easy for reviewers to reproduce.
 
-If you want the shortest path from clone to a running dashboard, jump to [Quick start](#quick-start).
-
 ## Table of contents
 
-- [Problem statement](#problem-statement)
-- [Dataset](#dataset)
-- [Key features](#key-features)
-- [Course project requirements mapping](#course-project-requirements-mapping)
-- [Architecture](#architecture)
-- [Batch pipeline details](#batch-pipeline-details)
-- [Tech stack](#tech-stack)
-- [Repository layout](#repository-layout)
-- [Warehouse layers and key models](#warehouse-layers-and-key-models)
-- [Dashboard](#dashboard)
-- [BigQuery optimization and data quality](#bigquery-optimization-and-data-quality)
-- [Step-by-step reproduction](#step-by-step-reproduction)
-- [Quick start](#quick-start)
-- [Future improvements](#future-improvements)
-- [Contributing](#contributing)
-- [Acknowledgements](#acknowledgements)
+- [Thalassa](#thalassa)
+  - [Table of contents](#table-of-contents)
+  - [Quick start](#quick-start)
+  - [Problem statement and Dataset](#problem-statement-and-dataset)
+    - [Dataset](#dataset)
+  - [Course project requirements mapping](#course-project-requirements-mapping)
+  - [Architecture](#architecture)
+  - [Batch pipeline details](#batch-pipeline-details)
+  - [Tech stack](#tech-stack)
+  - [Repository layout](#repository-layout)
+  - [Warehouse layers and key models](#warehouse-layers-and-key-models)
+  - [BigQuery optimization and data quality](#bigquery-optimization-and-data-quality)
+    - [Partitioning and clustering](#partitioning-and-clustering)
+    - [Data quality checks](#data-quality-checks)
+  - [Step-by-step reproduction](#step-by-step-reproduction)
+    - [Clone the repository](#clone-the-repository)
+    - [Install Python dependencies](#install-python-dependencies)
+    - [Create or choose a GCP project](#create-or-choose-a-gcp-project)
+    - [Authenticate to Google Cloud](#authenticate-to-google-cloud)
+    - [Configure Bruin](#configure-bruin)
+    - [Choose a setup path](#choose-a-setup-path)
+      - [One-click setup (recommended)](#one-click-setup-recommended)
+      - [Manual setup](#manual-setup)
+    - [Run the initial backfill](#run-the-initial-backfill)
+    - [Launch the dashboard](#launch-the-dashboard)
+    - [Change the dataset later](#change-the-dataset-later)
+    - [Validate manually](#validate-manually)
+    - [Optional: regenerate intelligence snapshots directly](#optional-regenerate-intelligence-snapshots-directly)
+    - [Verify that the run worked](#verify-that-the-run-worked)
+    - [Delete the GCP resources](#delete-the-gcp-resources)
+  - [Dashboard](#dashboard)
+  - [Future improvements](#future-improvements)
+  - [Contributing](#contributing)
 
-## Problem statement
+## Quick start
+
+If you want the shortest reviewer path, use the full guide below but only touch these sections:
+
+1. [Clone the repository](#clone-the-repository) and run `uv sync`.
+2. Complete [Authenticate to Google Cloud](#authenticate-to-google-cloud) and [Configure Bruin](#configure-bruin).
+3. Run the setup flow in [Choose a setup path](#choose-a-setup-path). If the dataset and infrastructure already exist, use the local-only switch in [Change the dataset later](#change-the-dataset-later) instead.
+4. [Run the initial backfill](#run-the-initial-backfill).
+5. [Launch the dashboard](#launch-the-dashboard).
+
+## Problem statement and Dataset
 
 Greek coastal traffic data is publicly available, but it is not immediately usable for analytics. Raw API responses are noisy, schema-light, and difficult to compare across time, ports, and routes.
 
@@ -46,20 +71,13 @@ This project answers questions such as:
 
 To answer those questions reliably, the project builds a repeatable batch pipeline with explicit quality checks, curated warehouse models, and a dashboard backed by stable fact tables instead of ad hoc raw queries.
 
-## Dataset
+### Dataset
 
 - Source: `data.gov.gr` `sailing_traffic` API
 - Domain: Greek maritime passenger and vehicle traffic
 - Pipeline interpretation: the source is modeled as reported traffic observations by service date, route code, departure port, and arrival port
 - Analytics outcome: curated route- and port-level warehouse tables for dashboarding
 
-## Key features
-
-- A batch pipeline orchestrated with Bruin
-- Cloud infrastructure on GCP provisioned with Terraform
-- A BigQuery warehouse with raw, staging, intermediate, marts, and report layers
-- A Streamlit dashboard with more than two tiles
-- Optional cached AI-generated insight snapshots stored in BigQuery
 
 ## Course project requirements mapping
 
@@ -157,24 +175,6 @@ These are the folders that matter for reproducing the project:
 | Reports | Quality and profiling outputs | `<THALASSA_BQ_DATASET>.row_counts_daily`, `<THALASSA_BQ_DATASET>.row_counts_weekly`, `<THALASSA_BQ_DATASET>.row_counts_monthly`, `<THALASSA_BQ_DATASET>.row_counts_yearly` |
 | Intelligence | Cached narrative layer for the UI | `<THALASSA_BQ_DATASET>.intelligence_snapshots`, `<THALASSA_BQ_DATASET>.auto_panel_snapshot_writer` |
 
-## Dashboard
-
-The dashboard reads curated BigQuery tables, not raw API payloads.
-
-Main outputs include:
-
-- KPI cards for passengers, vehicles, active corridors, concentration, and leading port
-- `Traffic Pulse`: a temporal trend chart for daily, weekly, or monthly movement
-- `Top Corridors`: a categorical ranking of the busiest departure-arrival pairs
-- `Port Balance`: a categorical ranking of the busiest ports by passenger flow
-- Analytics views for weekday profile, corridor concentration, corridor efficiency, and port net flow
-- A cached intelligence panel backed by `<THALASSA_BQ_DATASET>.intelligence_snapshots`
-
-This means the course dashboard requirement is covered by at least:
-
-- one temporal tile: `Traffic Pulse`
-- one categorical tile: `Top Corridors` or `Port Balance`
-
 ## BigQuery optimization and data quality
 
 ### Partitioning and clustering
@@ -202,40 +202,35 @@ Examples already implemented:
 
 ## Step-by-step reproduction
 
-If you are using PowerShell, replace `./` with `.\` in the commands below.
+> [!TIP]
+> If you are using PowerShell, replace `./` with `.\` in the commands below.
 
-### 1. Clone the repository
+> [!IMPORTANT]
+> Required tools:
+> 
+> You need these tools available in your shell:
+> 
+> - Python 3.11+
+> - `uv`
+> - `bruin`
+> - `terraform`
+> - `gcloud`
+
+
+### Clone the repository
 
 ```bash
 git clone https://github.com/dimzachar/thalassa-analytics.git
 cd thalassa-analytics
 ```
 
-### 2. Install the required tools
-
-You need these tools available in your shell:
-
-- Python 3.11+
-- `uv`
-- `bruin`
-- `terraform`
-- `gcloud`
-
-Terraform install guide:
-
-- https://developer.hashicorp.com/terraform/install
-
-Verify them:
+### Install Python dependencies
 
 ```bash
-python --version
-uv --version
-bruin --version
-terraform version
-gcloud version
+uv sync
 ```
 
-### 3. Create or choose a GCP project
+### Create or choose a GCP project
 
 You need a GCP project with billing enabled.
 
@@ -247,7 +242,7 @@ At minimum, the project must support:
 - Service Usage
 - optional Artifact Registry
 
-### 4. Authenticate to Google Cloud
+### Authenticate to Google Cloud
 
 The simplest local path is Application Default Credentials.
 
@@ -268,7 +263,7 @@ export THALASSA_GCP_SERVICE_ACCOUNT_FILE=/absolute/path/to/key.json
 
 For Streamlit specifically, you can also copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` and fill in the service account values.
 
-### 5. Configure Bruin
+### Configure Bruin
 
 Update `.bruin.yml` so the `gcp-default` connection points to your project.
 
@@ -289,14 +284,15 @@ environments:
 
 Replace `YOUR_GCP_PROJECT` with your real GCP project ID.
 
-### 6. Choose a setup path
+### Choose a setup path
 
 Pick one of these and follow only that one.
 
 #### One-click setup (recommended)
 
 Use this when you want one command to set the dataset, sync Bruin, validate the pipeline, and apply Terraform.
-Run the command from the repo root after Steps 4 and 5 are done.
+Run the command from the repo root after [Authenticate to Google Cloud](#authenticate-to-google-cloud) and [Configure Bruin](#configure-bruin) are done.
+
 
 PowerShell:
 
@@ -304,24 +300,37 @@ PowerShell:
 .\scripts\set_dataset.ps1 my_dataset -ProjectId YOUR_GCP_PROJECT -Region europe-west1 -BqLocation EU -Environment prod
 ```
 
-Bash:
+<details>
+<summary>Bash:</summary>
 
 ```bash
 ./scripts/set_dataset.sh my_dataset --project-id YOUR_GCP_PROJECT --region europe-west1 --bq-location EU --environment prod
 ```
+</details>
 
-Replace `my_dataset` with the dataset name you want and `YOUR_GCP_PROJECT` with your real GCP project ID. Change `europe-west1`, `EU`, and `prod` too if your region, BigQuery location, or environment are different.
+---
 
-What this does:
+> [!NOTE]
+>
+><details>
+><summary>What this does:</summary>
+>
+>- creates `.env` from `.env.example` if needed
+>- sets `THALASSA_BQ_DATASET`
+>- sets `THALASSA_BQ_PROJECT` and `THALASSA_BQ_LOCATION` when you pass them
+>- creates `infra/terraform.tfvars` from the example if needed
+>- writes `project_id`, `region`, `bq_location`, and `environment`
+>- syncs Bruin asset dataset prefixes
+>- runs `bruin validate ./pipeline --fast`
+>- runs `terraform init`, `plan`, and `apply`
+>
+></details>
+---
 
-- creates `.env` from `.env.example` if needed
-- sets `THALASSA_BQ_DATASET`
-- sets `THALASSA_BQ_PROJECT` and `THALASSA_BQ_LOCATION` when you pass them
-- creates `infra/terraform.tfvars` from the example if needed
-- writes `project_id`, `region`, `bq_location`, and `environment`
-- syncs Bruin asset dataset prefixes
-- runs `bruin validate ./pipeline --fast`
-- runs `terraform init`, `plan`, and `apply`
+Replace:
+- `my_dataset` with the dataset name you want
+- `YOUR_GCP_PROJECT` with your real GCP project ID
+- Change `europe-west1`, `EU`, and `prod` too if your region, BigQuery location, or environment are different.
 
 The dataset name lives in `.env`. Terraform reads it from `THALASSA_BQ_DATASET`, so you do not need to repeat it in `infra/terraform.tfvars`.
 Project-wide Terraform resource names are derived from that dataset too. For example, `my_dataset` becomes a service account like `my-dataset-pipeline` and an Artifact Registry repo like `my-dataset`.
@@ -330,8 +339,7 @@ Add `-AutoApprove` in PowerShell or `--auto-approve` in Bash if you want a non-i
 
 #### Manual setup
 
-Use this if you want to control `.env` and Terraform inputs yourself.
-Run these commands from the repo root.
+If you want to control `.env` and Terraform inputs yourself, run these commands from the repo root.
 
 PowerShell:
 
@@ -340,12 +348,15 @@ Copy-Item .env.example .env
 Copy-Item infra/terraform.tfvars.example infra/terraform.tfvars
 ```
 
-Bash:
+<details>
+<summary>Bash:</summary>
 
 ```bash
 cp .env.example .env
 cp infra/terraform.tfvars.example infra/terraform.tfvars
 ```
+
+</details>
 
 Edit `.env` and set at least:
 
@@ -370,23 +381,11 @@ terraform -chdir=infra plan
 terraform -chdir=infra apply
 ```
 
-Terraform creates:
-
-- the BigQuery dataset
-- a pipeline service account
-- IAM bindings for BigQuery
-- optional Secret Manager secret slots for AI providers
-- optional Artifact Registry
+See more about [what Terraform creates](infra/README.md).
 
 Those AI secret slots are empty placeholders. You do not need to add OpenRouter, Anthropic, or Gemini keys unless you want LLM-generated intelligence text. Without them, the project still runs and falls back to deterministic reporting.
 
-### 7. Install Python dependencies
-
-```bash
-uv sync
-```
-
-### 8. Run the initial backfill
+### Run the initial backfill
 
 For a first run, use `--full-refresh`. This is especially important if tables already exist and you want BigQuery partitioning and clustering to match the checked-in model definitions.
 
@@ -403,7 +402,7 @@ What this does:
 - refreshes `<THALASSA_BQ_DATASET>.intelligence_snapshots`
 - triggers the snapshot writer downstream
 
-### 9. Launch the dashboard
+### Launch the dashboard
 
 ```bash
 uv run streamlit run ./dashboard/app.py
@@ -411,7 +410,7 @@ uv run streamlit run ./dashboard/app.py
 
 Open the local Streamlit URL shown in the terminal.
 
-### 10. Change the dataset later
+### Change the dataset later
 
 Once the project is already set up, use the same script to switch datasets.
 
@@ -425,15 +424,20 @@ PowerShell:
 
 Bash:
 
+<details>
+<summary>Click to expand</summary>
+
 ```bash
 ./scripts/set_dataset.sh my_dataset --skip-terraform
 ```
+
+</details>
 
 Replace `my_dataset` with the dataset name you want.
 
 If the new dataset also needs Terraform changes applied, rerun the command from [One-click setup (recommended)](#one-click-setup-recommended) without the skip flag.
 
-### 11. Validate manually
+### Validate manually
 
 ```bash
 uv run --no-project python ./scripts/sync_bruin_dataset.py
@@ -441,7 +445,7 @@ bruin validate ./pipeline --fast
 bruin validate ./pipeline
 ```
 
-### 12. Optional: regenerate intelligence snapshots directly
+### Optional: regenerate intelligence snapshots directly
 
 These commands are useful when you want to refresh only the narrative layer.
 
@@ -455,7 +459,7 @@ or
 uv run python ./scripts/generate_auto_panel_snapshot.py
 ```
 
-### 13. Verify that the run worked
+### Verify that the run worked
 
 At this point you should have:
 
@@ -475,7 +479,7 @@ FROM `YOUR_GCP_PROJECT.YOUR_THALASSA_BQ_DATASET.row_counts_daily`;
 
 Replace `YOUR_GCP_PROJECT` and `YOUR_THALASSA_BQ_DATASET` with your real values.
 
-### 14. Tear Down The Infrastructure
+### Delete the GCP resources
 
 If you are done with the project and want to delete the GCP resources, run:
 
@@ -499,23 +503,30 @@ If you want Terraform to delete the dataset and everything inside it too:
 
 If you want to keep the safer default, leave it as `false` and manually empty or delete the dataset tables first.
 
-## Quick start
 
-If you want the shortest reviewer path, use the full guide above but only touch these sections:
+## Dashboard
 
-1. Complete [4. Authenticate to Google Cloud](#4-authenticate-to-google-cloud) and [5. Configure Bruin](#5-configure-bruin).
-2. Run the setup flow in [6. Choose a setup path](#6-choose-a-setup-path). If the dataset and infrastructure already exist, use the local-only switch in [10. Change the dataset later](#10-change-the-dataset-later) instead.
-3. Run `uv sync`.
-4. Run the backfill in [8. Run the initial backfill](#8-run-the-initial-backfill).
-5. Launch the dashboard in [9. Launch the dashboard](#9-launch-the-dashboard).
+The dashboard reads curated BigQuery tables, not raw API payloads.
+
+Main outputs include:
+
+- KPI cards for passengers, vehicles, active corridors, concentration, and leading port
+- `Traffic Pulse`: a temporal trend chart for daily, weekly, or monthly movement
+- `Top Corridors`: a categorical ranking of the busiest departure-arrival pairs
+- `Port Balance`: a categorical ranking of the busiest ports by passenger flow
+- Analytics views for weekday profile, corridor concentration, corridor efficiency, and port net flow
+- A cached intelligence panel backed by `<THALASSA_BQ_DATASET>.intelligence_snapshots`
+
+This means the course dashboard requirement is covered by at least:
+
+- one temporal tile: `Traffic Pulse`
+- one categorical tile: `Top Corridors` or `Port Balance`
 
 ## Future improvements
 
 - Add CI checks for `bruin validate`, dependency sync, and Terraform planning
-- Add targeted automated tests for the intelligence and repository layers
-- Deploy the Streamlit dashboard to a managed runtime for easier peer access
-- Add a dedicated cloud storage landing layer in a future iteration if you want a stricter lake-to-warehouse architecture
-- Expand operational monitoring around data freshness and failed pipeline runs
+- Add automated tests
+- Add monitoring
 
 ## Contributing
 
@@ -532,11 +543,3 @@ Before opening a PR:
 7. In the PR description, include the purpose of the change, touched paths, and validation commands you ran
 
 For larger changes, opening an issue first is the best way to align on scope before implementation.
-
-## Acknowledgements
-
-- Public dataset provided by `data.gov.gr`
-- Pipeline orchestration and asset framework powered by Bruin
-- Warehouse and cloud services provided by BigQuery and GCP
-- Dashboard built with Streamlit
-- Project structure inspired by common open-source README patterns used in mature GitHub repos

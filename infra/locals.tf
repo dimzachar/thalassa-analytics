@@ -8,8 +8,8 @@ locals {
   }
   env_dataset_id                            = trimspace(lookup(local.dotenv_map, "THALASSA_BQ_DATASET", ""))
   effective_dataset_id                      = local.env_dataset_id != "" ? local.env_dataset_id : var.dataset_id
-  dataset_slug_raw                          = regexreplace(lower(local.effective_dataset_id), "[^a-z0-9]+", "-")
-  dataset_slug                              = trim(regexreplace(local.dataset_slug_raw, "-+", "-"), "-")
+  dataset_slug_raw                          = replace(lower(local.effective_dataset_id), "/[^a-z0-9]+/", "-")
+  dataset_slug                              = trim(replace(local.dataset_slug_raw, "/-+/", "-"), "-")
   resource_prefix_base                      = local.dataset_slug != "" ? local.dataset_slug : "thalassa"
   resource_prefix                           = can(regex("^[a-z]", local.resource_prefix_base)) ? local.resource_prefix_base : "d-${local.resource_prefix_base}"
   effective_app_name                        = trimspace(var.app_name) != "" ? trimspace(var.app_name) : local.resource_prefix
