@@ -26,7 +26,9 @@ columns:
     checks:
       - name: not_null
       - name: accepted_values
-        value: "departure,arrival"
+        value:
+          - departure
+          - arrival
   - name: port_name
     type: string
     checks:

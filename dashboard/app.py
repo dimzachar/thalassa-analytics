@@ -4,26 +4,35 @@ from __future__ import annotations
 
 import concurrent.futures
 import os
+import sys
 from html import escape
 from pathlib import Path
 
 import altair as alt
 import pandas as pd
 import streamlit as st
-from dotenv import load_dotenv
 from google.api_core.exceptions import NotFound
 from google.cloud import bigquery
 from streamlit_option_menu import option_menu
 
-from intelligence import build_agent_context, build_deterministic_report_lines
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-load_dotenv(PROJECT_ROOT / ".env")
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-BQ_PROJECT = os.getenv("THALASSA_BQ_PROJECT", "").strip()
-BQ_DATASET = os.getenv("THALASSA_BQ_DATASET", "thalassa").strip() or "thalassa"
-BQ_LOCATION = os.getenv("THALASSA_BQ_LOCATION", "").strip() or None
-INTELLIGENCE_TABLE = os.getenv("THALASSA_INTELLIGENCE_TABLE", "thalassa.intelligence_snapshots").strip() or "thalassa.intelligence_snapshots"
+from intelligence import build_agent_context, build_deterministic_report_lines
+from intelligence.bigquery_runtime import create_bigquery_client, job_to_dataframe
+from runtime_config import (
+    build_dataset_table,
+    get_bq_dataset,
+    get_bq_location,
+    get_bq_project,
+    get_intelligence_table,
+)
+
+BQ_PROJECT = get_bq_project()
+BQ_DATASET = get_bq_dataset()
+BQ_LOCATION = get_bq_location()
+INTELLIGENCE_TABLE = get_intelligence_table(BQ_DATASET)
 
 if not BQ_PROJECT:
     st.error("Set THALASSA_BQ_PROJECT in `.env` or environment variables.")
@@ -341,10 +350,27 @@ def _qualify(table_name: str) -> str:
     return f"`{BQ_PROJECT}.{BQ_DATASET}.{table_name}`"
 
 
+def _load_streamlit_secrets_if_present():
+    """Return Streamlit secrets only when a secrets.toml file actually exists."""
+    candidate_paths = [
+        Path.home() / ".streamlit" / "secrets.toml",
+        PROJECT_ROOT / ".streamlit" / "secrets.toml",
+        Path(__file__).resolve().parent / ".streamlit" / "secrets.toml",
+    ]
+    if not any(path.exists() for path in candidate_paths):
+        return None
+
+    try:
+        return st.secrets
+    except Exception:
+        return None
+
+
 @st.cache_resource
 def get_bq_client() -> bigquery.Client:
-    """Return a cached BigQuery client."""
-    return bigquery.Client(project=BQ_PROJECT, location=BQ_LOCATION)
+    """Return a cached BigQuery client with explicit auth resolution."""
+    streamlit_secrets = _load_streamlit_secrets_if_present()
+    return create_bigquery_client(BQ_PROJECT, BQ_LOCATION, streamlit_secrets=streamlit_secrets)
 
 
 @st.cache_data(show_spinner=False)
@@ -366,7 +392,7 @@ def _run_query(
         job.result(timeout=timeout_seconds)
     except concurrent.futures.TimeoutError as exc:
         raise TimeoutError("BigQuery query timed out") from exc
-    return job.to_dataframe()
+    return job_to_dataframe(job)
 
 
 @st.cache_data(show_spinner=False)
@@ -375,7 +401,7 @@ def load_date_bounds() -> pd.DataFrame:
     return _run_query(
         f"""
         SELECT MIN(service_date) AS min_date, MAX(service_date) AS max_date
-        FROM {_qualify('thalassa.row_counts_daily')}
+        FROM {_qualify(build_dataset_table('row_counts_daily', BQ_DATASET))}
         """
     )
 
@@ -394,7 +420,7 @@ def load_daily(start_date: str, end_date: str) -> pd.DataFrame:
             distinct_arrival_ports,
             total_passengers,
             total_vehicles
-        FROM {_qualify('thalassa.row_counts_daily')}
+        FROM {_qualify(build_dataset_table('row_counts_daily', BQ_DATASET))}
         WHERE service_date BETWEEN @start_date AND @end_date
         ORDER BY service_date
         """,
@@ -415,7 +441,7 @@ def load_weekly(start_date: str, end_date: str) -> pd.DataFrame:
             distinct_route_pairs,
             distinct_departure_ports,
             distinct_arrival_ports
-        FROM {_qualify('thalassa.row_counts_weekly')}
+        FROM {_qualify(build_dataset_table('row_counts_weekly', BQ_DATASET))}
         WHERE week_start BETWEEN @start_date AND @end_date
         ORDER BY week_start
         """,
@@ -436,7 +462,7 @@ def load_monthly(start_date: str, end_date: str) -> pd.DataFrame:
             distinct_route_pairs,
             distinct_departure_ports,
             distinct_arrival_ports
-        FROM {_qualify('thalassa.row_counts_monthly')}
+        FROM {_qualify(build_dataset_table('row_counts_monthly', BQ_DATASET))}
         WHERE year_month BETWEEN @start_date AND @end_date
         ORDER BY year_month
         """,
@@ -456,7 +482,7 @@ def load_routes(start_date: str, end_date: str) -> pd.DataFrame:
             traffic_record_count,
             total_passengers,
             total_vehicles
-        FROM {_qualify('thalassa.fct_route_traffic_daily')}
+        FROM {_qualify(build_dataset_table('fct_route_traffic_daily', BQ_DATASET))}
         WHERE service_date BETWEEN @start_date AND @end_date
         ORDER BY service_date
         """,
@@ -478,7 +504,7 @@ def load_ports(start_date: str, end_date: str) -> pd.DataFrame:
             total_arriving_passengers,
             total_departing_vehicles,
             total_arriving_vehicles
-        FROM {_qualify('thalassa.fct_port_activity_daily')}
+        FROM {_qualify(build_dataset_table('fct_port_activity_daily', BQ_DATASET))}
         WHERE service_date BETWEEN @start_date AND @end_date
         ORDER BY service_date
         """,
@@ -492,7 +518,7 @@ def load_filter_options() -> tuple[list[str], list[str]]:
     route_df = _run_query(
         f"""
         SELECT DISTINCT departure_port, arrival_port
-        FROM {_qualify('thalassa.fct_route_traffic_daily')}
+        FROM {_qualify(build_dataset_table('fct_route_traffic_daily', BQ_DATASET))}
         WHERE departure_port IS NOT NULL AND arrival_port IS NOT NULL
         ORDER BY departure_port, arrival_port
         """
@@ -500,7 +526,7 @@ def load_filter_options() -> tuple[list[str], list[str]]:
     port_df = _run_query(
         f"""
         SELECT DISTINCT port_name
-        FROM {_qualify('thalassa.fct_port_activity_daily')}
+        FROM {_qualify(build_dataset_table('fct_port_activity_daily', BQ_DATASET))}
         WHERE port_name IS NOT NULL
         ORDER BY port_name
         """
@@ -2174,7 +2200,7 @@ else:
                 )
             )
             _section_header("Weekday Demand Profile", "Average passenger demand by day of week.")
-            st.altair_chart(weekday_chart, use_container_width=True, key=weekday_chart_key)
+            st.altair_chart(weekday_chart, width='stretch', key=weekday_chart_key)
             st.caption(
                 "Avg passengers by weekday | "
                 f"Scope: {selected_start.isoformat()} to {selected_end.isoformat()}, "

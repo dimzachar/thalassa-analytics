@@ -15,4 +15,5 @@ dependencies = [
     "requests>=2.32",
     "streamlit>=1.44",
     "streamlit-option-menu>=0.4.0",
+    "google-cloud-bigquery-storage>=2.36.2",
 ]

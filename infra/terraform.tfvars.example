@@ -1,0 +1,22 @@
+project_id  = "your-gcp-project-id"
+region      = "europe-west1"
+bq_location = "EU"
+environment = "prod"
+
+# Keep false unless you explicitly enable THALASSA_BQ_USE_STORAGE_API in runtime config.
+enable_bigquery_storage_roles = false
+
+# Keep true if you plan to containerize later.
+create_artifact_registry = true
+
+# Optional extras
+labels = {
+  owner = "your-name"
+}
+
+# Secret slots only. Add secret values manually after terraform apply.
+secret_ids = [
+  "openrouter-api-key",
+  "anthropic-api-key",
+  "google-api-key",
+]

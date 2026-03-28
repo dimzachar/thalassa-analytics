@@ -14,7 +14,7 @@ materialization:
 WITH scope AS (
     SELECT
         MAX(service_date) AS end_date,
-        DATE_SUB(MAX(service_date), INTERVAL 89 DAY) AS start_date
+        GREATEST(DATE_SUB(MAX(service_date), INTERVAL 89 DAY), MIN(service_date)) AS start_date
     FROM thalassa.row_counts_daily
 ),
 
@@ -144,66 +144,8 @@ base AS (
     LEFT JOIN top_port_best tp ON TRUE
 )
 
-SELECT
-    snapshot_ts,
-    'agent_panel' AS chart_id,
-    'auto_panel' AS insight_type,
-    'weekly' AS grain,
-    CAST(NULL AS STRING) AS filter_hash,
-    data_version,
-    'Harbor Intelligence' AS title,
-    FORMAT(
-        'Window %s to %s: %s passengers across %s traffic rows. Top corridor %s and top port %s.',
-        CAST(start_date AS STRING),
-        CAST(end_date AS STRING),
-        CAST(CAST(passengers_total AS INT64) AS STRING),
-        CAST(CAST(rows_total AS INT64) AS STRING),
-        top_corridor_label,
-        top_port_name
-    ) AS summary,
-    ARRAY<STRING>[
-        FORMAT('KPI window (%s to %s): %s passengers, %s vehicles.', CAST(start_date AS STRING), CAST(end_date AS STRING), CAST(CAST(passengers_total AS INT64) AS STRING), CAST(CAST(vehicles_total AS INT64) AS STRING)),
-        FORMAT('Top corridor: %s (%s passengers, %s sailings).', top_corridor_label, CAST(CAST(top_corridor_passengers AS INT64) AS STRING), CAST(CAST(top_corridor_sailings AS INT64) AS STRING)),
-        FORMAT('Port flow leader: %s (%s passengers).', top_port_name, CAST(CAST(top_port_passengers AS INT64) AS STRING))
-    ] AS facts,
-    ARRAY_CONCAT(
-        IF(
-            prior_avg_passengers > 0,
-            ARRAY<STRING>[
-                FORMAT('Latest 7-day average vs prior 7-day window: %+.1f%%.', ((recent_avg_passengers - prior_avg_passengers) / prior_avg_passengers) * 100)
-            ],
-            ARRAY<STRING>[]
-        ),
-        ARRAY<STRING>[
-            FORMAT('Current 7-day average passenger volume: %s.', CAST(CAST(recent_avg_passengers AS INT64) AS STRING))
-        ]
-    ) AS anomalies,
-    ARRAY<STRING>[
-        FORMAT('Top corridor share of passengers: %.1f%%.', IF(passengers_total > 0, (top_corridor_passengers / passengers_total) * 100, 0)),
-        FORMAT('Vehicles per passenger ratio in scope: %.3f.', IF(passengers_total > 0, vehicles_total / passengers_total, 0))
-    ] AS comparisons,
-    ARRAY<STRING>[
-        'Monitor top-corridor concentration and investigate sudden share jumps.',
-        'Track weekly deltas after each ingestion run before operational decisions.'
-    ] AS recommendations,
-    FORMAT(
-        'KPI window (%s to %s): %s passengers, %s vehicles.\n\nTop corridor: %s.\n\nTop port: %s.\n\nLatest 7-day average vs prior 7-day window: %s.',
-        CAST(start_date AS STRING),
-        CAST(end_date AS STRING),
-        CAST(CAST(passengers_total AS INT64) AS STRING),
-        CAST(CAST(vehicles_total AS INT64) AS STRING),
-        top_corridor_label,
-        top_port_name,
-        IF(prior_avg_passengers > 0, FORMAT('%+.1f%%', ((recent_avg_passengers - prior_avg_passengers) / prior_avg_passengers) * 100), 'N/A')
-    ) AS report_text,
-    CAST(NULL AS STRING) AS insight_text,
-    "deterministic_sql" AS generation_mode,
-    CAST(NULL AS STRING) AS generation_error,
-    CAST(NULL AS STRING) AS model_name
-FROM base
-
-UNION ALL
-
+-- The main agent_panel snapshot is written by auto_panel_snapshot_writer.py.
+-- This SQL asset only seeds deepen-chart snapshot rows.
 SELECT
     snapshot_ts,
     'traffic_pulse' AS chart_id,
@@ -236,7 +178,9 @@ SELECT
     CAST(NULL AS STRING) AS insight_text,
     "deterministic_sql" AS generation_mode,
     CAST(NULL AS STRING) AS generation_error,
-    CAST(NULL AS STRING) AS model_name
+    CAST(NULL AS STRING) AS model_name,
+    CAST(NULL AS STRING) AS source_snapshot_json,
+    CAST(NULL AS STRING) AS overlay_json
 FROM base
 
 UNION ALL
@@ -268,7 +212,9 @@ SELECT
     CAST(NULL AS STRING) AS insight_text,
     "deterministic_sql" AS generation_mode,
     CAST(NULL AS STRING) AS generation_error,
-    CAST(NULL AS STRING) AS model_name
+    CAST(NULL AS STRING) AS model_name,
+    CAST(NULL AS STRING) AS source_snapshot_json,
+    CAST(NULL AS STRING) AS overlay_json
 FROM base
 
 UNION ALL
@@ -299,7 +245,9 @@ SELECT
     CAST(NULL AS STRING) AS insight_text,
     "deterministic_sql" AS generation_mode,
     CAST(NULL AS STRING) AS generation_error,
-    CAST(NULL AS STRING) AS model_name
+    CAST(NULL AS STRING) AS model_name,
+    CAST(NULL AS STRING) AS source_snapshot_json,
+    CAST(NULL AS STRING) AS overlay_json
 FROM base;
 
 

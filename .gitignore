@@ -2,6 +2,7 @@
 duckdb.db.wal
 .venv/
 .env
+.streamlit/secrets.toml
 __pycache__/
 pipeline/assets/ingestion/__pycache__/
 data/raw/
@@ -14,3 +15,19 @@ logs/*.log
 
 docs/*
 .md
+backup/
+logs/*
+notebooks/.ipynb_checkpoints
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+infra/terraform.tfvars
+tmp/
+.tmp_repos/

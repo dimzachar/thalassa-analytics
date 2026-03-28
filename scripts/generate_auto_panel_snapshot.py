@@ -7,19 +7,25 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-from dotenv import load_dotenv
 from google.cloud import bigquery
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-load_dotenv(PROJECT_ROOT / ".env")
-
 from dashboard.intelligence.agents.detector_agent import detect_notable_change
 from dashboard.intelligence.agents.generation_agent import generate_auto_panel_snapshot
+from dashboard.intelligence.bigquery_runtime import create_bigquery_client, job_to_dataframe
 from dashboard.intelligence.agents.snapshot_agent import build_auto_panel_source_snapshot
 from dashboard.intelligence.repositories import build_data_version, upsert_snapshot
+from runtime_config import (
+    build_dataset_table,
+    get_bq_dataset,
+    get_bq_location,
+    get_bq_project,
+    get_intelligence_table,
+    qualify_bigquery_table,
+)
 
 
 def _qualify(project: str, dataset: str, table_name: str) -> str:
@@ -40,15 +46,15 @@ def _run_query(client: bigquery.Client, query: str, params: tuple[tuple[str, str
             query_parameters=[bigquery.ScalarQueryParameter(n, t, v) for n, t, v in params]
         ),
     )
-    return job.to_dataframe()
+    return job_to_dataframe(job)
 
 
 def main() -> None:
     """Build source data windows, generate snapshots, and upsert them into BigQuery."""
-    bq_project = os.getenv("THALASSA_BQ_PROJECT", "").strip()
-    bq_dataset = os.getenv("THALASSA_BQ_DATASET", "thalassa").strip() or "thalassa"
-    bq_location = os.getenv("THALASSA_BQ_LOCATION", "").strip() or None
-    insights_table = os.getenv("THALASSA_INTELLIGENCE_TABLE", "thalassa.intelligence_snapshots").strip() or "thalassa.intelligence_snapshots"
+    bq_project = get_bq_project()
+    bq_dataset = get_bq_dataset()
+    bq_location = get_bq_location()
+    insights_table = get_intelligence_table(bq_dataset)
     snapshot_end_override = os.getenv("THALASSA_SNAPSHOT_END_DATE", "").strip()
     lookback_days_override = os.getenv("THALASSA_SNAPSHOT_LOOKBACK_DAYS", "").strip()
     kpi_window_override = os.getenv("THALASSA_KPI_WINDOW_DAYS", "").strip()
@@ -56,11 +62,23 @@ def main() -> None:
     if not bq_project:
         raise ValueError("Set THALASSA_BQ_PROJECT in .env")
 
-    client = bigquery.Client(project=bq_project, location=bq_location)
+    client = create_bigquery_client(bq_project, bq_location)
 
-    daily_table = _qualify(bq_project, bq_dataset, "thalassa.row_counts_daily")
-    routes_table = _qualify(bq_project, bq_dataset, "thalassa.fct_route_traffic_daily")
-    ports_table = _qualify(bq_project, bq_dataset, "thalassa.fct_port_activity_daily")
+    daily_table = qualify_bigquery_table(
+        bq_project,
+        bq_dataset,
+        build_dataset_table("row_counts_daily", bq_dataset),
+    )
+    routes_table = qualify_bigquery_table(
+        bq_project,
+        bq_dataset,
+        build_dataset_table("fct_route_traffic_daily", bq_dataset),
+    )
+    ports_table = qualify_bigquery_table(
+        bq_project,
+        bq_dataset,
+        build_dataset_table("fct_port_activity_daily", bq_dataset),
+    )
 
     bounds = _run_query(client, f"SELECT MIN(service_date) AS min_date, MAX(service_date) AS max_date FROM `{daily_table}`")
     if bounds.empty or pd.isna(bounds.iloc[0]["max_date"]):
@@ -157,7 +175,7 @@ def main() -> None:
             notable_change=notable,
         )
 
-        target_table = _qualify(bq_project, bq_dataset, insights_table)
+        target_table = qualify_bigquery_table(bq_project, bq_dataset, insights_table)
         upsert_snapshot(client, table_fqn=target_table, payload=payload)
 
         print(
