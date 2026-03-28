@@ -21,6 +21,7 @@ $EnvFile = Join-Path $ProjectRoot ".env"
 $EnvExample = Join-Path $ProjectRoot ".env.example"
 $TfvarsFile = Join-Path $ProjectRoot "infra\terraform.tfvars"
 $TfvarsExample = Join-Path $ProjectRoot "infra\terraform.tfvars.example"
+$TfWorkspace = "dataset-$($DatasetId.ToLowerInvariant())"
 
 function Upsert-EnvVar {
     param(
@@ -139,6 +140,57 @@ function Get-TfvarsValue {
     return ""
 }
 
+function Warn-CredentialOverrides {
+    $credentialOverrides = @(
+        @{ Name = "GOOGLE_APPLICATION_CREDENTIALS"; Value = $env:GOOGLE_APPLICATION_CREDENTIALS },
+        @{ Name = "CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE"; Value = $env:CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE },
+        @{ Name = "GOOGLE_IMPERSONATE_SERVICE_ACCOUNT"; Value = $env:GOOGLE_IMPERSONATE_SERVICE_ACCOUNT }
+    ) | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Value) }
+
+    if ($credentialOverrides.Count -eq 0) {
+        return
+    }
+
+    Write-Warning "Credential override environment variables are set. Terraform may use these instead of your active gcloud or ADC login."
+    foreach ($override in $credentialOverrides) {
+        Write-Warning ("  {0}={1}" -f $override.Name, $override.Value)
+    }
+}
+
+function Invoke-NativeCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+        [Parameter(ValueFromRemainingArguments = $true)]
+        [string[]]$ArgumentList
+    )
+
+    & $FilePath @ArgumentList
+    $commandSucceeded = $?
+    $exitCode = $LASTEXITCODE
+    if ((-not $commandSucceeded) -or ($null -ne $exitCode -and $exitCode -ne 0)) {
+        $renderedArgs = if ($ArgumentList) { $ArgumentList -join " " } else { "" }
+        $renderedExitCode = if ($null -ne $exitCode) { $exitCode } else { "unknown" }
+        throw "Command failed with exit code $renderedExitCode: $FilePath $renderedArgs".Trim()
+    }
+}
+
+function Select-TerraformWorkspace {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$WorkspaceName
+    )
+
+    & terraform -chdir=infra workspace select $WorkspaceName *> $null
+    if ($?) {
+        Write-Host "Using Terraform workspace '$WorkspaceName'."
+        return
+    }
+
+    Invoke-NativeCommand terraform -chdir=infra workspace new $WorkspaceName
+    Write-Host "Created Terraform workspace '$WorkspaceName'."
+}
+
 Write-Host "Configuring dataset '$DatasetId'..."
 
 if (-not (Test-Path $EnvFile)) {
@@ -155,14 +207,16 @@ if ($BqLocation) {
     Upsert-EnvVar -Key "THALASSA_BQ_LOCATION" -Value $BqLocation -FilePath $EnvFile
 }
 
+Warn-CredentialOverrides
+
 Push-Location $ProjectRoot
 try {
     Write-Host "Syncing Bruin asset prefixes..."
-    uv run --no-project python .\scripts\sync_bruin_dataset.py
+    Invoke-NativeCommand uv run --no-project python .\scripts\sync_bruin_dataset.py
 
     if (-not $SkipValidate) {
         Write-Host "Validating pipeline..."
-        bruin validate .\pipeline --fast
+        Invoke-NativeCommand bruin validate .\pipeline --fast
     }
 
     if ($SkipTerraform) {
@@ -204,13 +258,14 @@ try {
     }
 
     Write-Host "Running Terraform..."
-    terraform -chdir=infra init
-    terraform -chdir=infra plan -var "dataset_id=$DatasetId"
+    Invoke-NativeCommand terraform -chdir=infra init
+    Select-TerraformWorkspace -WorkspaceName $TfWorkspace
+    Invoke-NativeCommand terraform -chdir=infra plan -var "dataset_id=$DatasetId"
     if ($AutoApprove) {
-        terraform -chdir=infra apply -auto-approve -var "dataset_id=$DatasetId"
+        Invoke-NativeCommand terraform -chdir=infra apply -auto-approve -var "dataset_id=$DatasetId"
     }
     else {
-        terraform -chdir=infra apply -var "dataset_id=$DatasetId"
+        Invoke-NativeCommand terraform -chdir=infra apply -var "dataset_id=$DatasetId"
     }
 
     Write-Host "Done. Dataset is set to '$DatasetId'."

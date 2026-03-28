@@ -1,5 +1,5 @@
 resource "google_project_service" "required" {
-  for_each = local.required_apis
+  for_each = local.required_apis_in_workspace
 
   project            = var.project_id
   service            = each.value

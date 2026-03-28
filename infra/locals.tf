@@ -1,4 +1,5 @@
 locals {
+  manages_shared_project_resources = terraform.workspace == "default"
   dotenv_path  = "${path.module}/../.env"
   dotenv_lines = fileexists(local.dotenv_path) ? split("\n", file(local.dotenv_path)) : []
   dotenv_map = {
@@ -35,6 +36,8 @@ locals {
     var.create_artifact_registry ? toset(["artifactregistry.googleapis.com"]) : toset([]),
     var.enable_bigquery_storage_roles ? toset(["bigquerystorage.googleapis.com"]) : toset([])
   )
+  required_apis_in_workspace = local.manages_shared_project_resources ? local.required_apis : toset([])
+  secret_ids_in_workspace    = local.manages_shared_project_resources ? toset(var.secret_ids) : toset([])
 
   bq_storage_project_members = var.enable_bigquery_storage_roles ? toset([
     "serviceAccount:${google_service_account.pipeline.email}",

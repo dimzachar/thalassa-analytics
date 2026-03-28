@@ -16,6 +16,7 @@ PROJECT_ID=""
 REGION=""
 BQ_LOCATION=""
 ENVIRONMENT=""
+TF_WORKSPACE=""
 
 usage() {
   cat <<'EOF'
@@ -51,6 +52,7 @@ fi
 
 DATASET_ID="$1"
 shift
+TF_WORKSPACE="dataset-${DATASET_ID,,}"
 
 if [[ ! "${DATASET_ID}" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
   echo "Dataset id must match ^[A-Za-z_][A-Za-z0-9_]*$"
@@ -142,6 +144,46 @@ read_tfvars_value() {
   awk -F'"' -v target="${key}" '$1 ~ "^" target "[[:space:]]*=" { print $2; exit }' "${file}"
 }
 
+warn_credential_overrides() {
+  local has_override=false
+
+  if [[ -n "${GOOGLE_APPLICATION_CREDENTIALS:-}" ]]; then
+    if [[ "${has_override}" == "false" ]]; then
+      echo "Warning: credential override environment variables are set. Terraform may use these instead of your active gcloud or ADC login."
+      has_override=true
+    fi
+    echo "  GOOGLE_APPLICATION_CREDENTIALS=${GOOGLE_APPLICATION_CREDENTIALS}"
+  fi
+
+  if [[ -n "${CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE:-}" ]]; then
+    if [[ "${has_override}" == "false" ]]; then
+      echo "Warning: credential override environment variables are set. Terraform may use these instead of your active gcloud or ADC login."
+      has_override=true
+    fi
+    echo "  CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE=${CLOUDSDK_AUTH_CREDENTIAL_FILE_OVERRIDE}"
+  fi
+
+  if [[ -n "${GOOGLE_IMPERSONATE_SERVICE_ACCOUNT:-}" ]]; then
+    if [[ "${has_override}" == "false" ]]; then
+      echo "Warning: credential override environment variables are set. Terraform may use these instead of your active gcloud or ADC login."
+      has_override=true
+    fi
+    echo "  GOOGLE_IMPERSONATE_SERVICE_ACCOUNT=${GOOGLE_IMPERSONATE_SERVICE_ACCOUNT}"
+  fi
+}
+
+select_terraform_workspace() {
+  local workspace="$1"
+
+  if run_terraform -chdir=infra workspace select "${workspace}" >/dev/null 2>&1; then
+    echo "Using Terraform workspace '${workspace}'."
+    return 0
+  fi
+
+  run_terraform -chdir=infra workspace new "${workspace}" >/dev/null
+  echo "Created Terraform workspace '${workspace}'."
+}
+
 resolve_cli() {
   local base="$1"
 
@@ -215,6 +257,8 @@ if [[ -n "${BQ_LOCATION}" ]]; then
   upsert_env_var "THALASSA_BQ_LOCATION" "${BQ_LOCATION}" "${ENV_FILE}"
 fi
 
+warn_credential_overrides
+
 echo "Syncing Bruin asset prefixes..."
 run_sync_script
 
@@ -274,6 +318,7 @@ echo "Running Terraform..."
 (
   cd "${PROJECT_ROOT}"
   run_terraform -chdir=infra init
+  select_terraform_workspace "${TF_WORKSPACE}"
   run_terraform -chdir=infra plan -var "dataset_id=${DATASET_ID}"
   if [[ "${AUTO_APPROVE}" == "true" ]]; then
     run_terraform -chdir=infra apply -auto-approve -var "dataset_id=${DATASET_ID}"

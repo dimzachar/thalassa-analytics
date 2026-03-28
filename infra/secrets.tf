@@ -1,6 +1,6 @@
 resource "google_secret_manager_secret" "runtime" {
   depends_on = [google_project_service.required]
-  for_each   = toset(var.secret_ids)
+  for_each   = local.secret_ids_in_workspace
 
   project   = var.project_id
   secret_id = each.value
