@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![Bruin](https://img.shields.io/badge/Bruin-Orchestrated-111827?style=flat-square)](https://getbruin.com/)
-[![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://streamlit.io/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-Dashboard-FF4B4B?style=flat-square&logo=streamlit&logoColor=white)](https://thalassa.streamlit.app/)
 [![BigQuery](https://img.shields.io/badge/BigQuery-Warehouse-4285F4?style=flat-square&logo=googlebigquery&logoColor=white)](https://cloud.google.com/bigquery)
 [![GCP](https://img.shields.io/badge/GCP-Cloud-4285F4?style=flat-square&logo=googlecloud&logoColor=white)](https://cloud.google.com/)
 [![Terraform](https://img.shields.io/badge/Terraform-IaC-844FBA?style=flat-square&logo=terraform&logoColor=white)](https://www.terraform.io/)
@@ -79,7 +79,7 @@ To answer those questions reliably, the project builds a repeatable batch pipeli
 
 ### Dataset
 
-- Source: `data.gov.gr` `sailing_traffic` API
+- Source: [`data.gov.gr` `sailing_traffic` API](https://www.data.gov.gr/datasets/sailing_traffic/)
 - Domain: Greek maritime passenger and vehicle traffic
 - Pipeline interpretation: the source is modeled as reported traffic observations by service date, route code, departure port, and arrival port
 - Analytics outcome: curated route- and port-level warehouse tables for dashboarding
