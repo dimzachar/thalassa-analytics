@@ -140,6 +140,33 @@ def _inject_styles() -> None:
             border-right: 1px solid var(--stroke);
         }
         [data-testid="stSidebar"] > div:first-child { width: 18.4rem; }
+        .connect-inline {
+            margin-top: 1.1rem;
+            font-size: 0.9rem;
+            color: var(--muted);
+        }
+        .connect-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.55rem;
+            padding: 0.2rem 0.1rem;
+            color: #BFD7F5;
+            font-weight: 500;
+            text-decoration: none;
+        }
+        .connect-link:hover {
+            color: #E0F2FE;
+        }
+        .connect-icon {
+            width: 18px;
+            height: 18px;
+            display: inline-block;
+        }
+        .connect-icon svg {
+            width: 18px;
+            height: 18px;
+            fill: #7DD3FC;
+        }
 
         .brand {
             padding: .95rem .2rem 1rem .2rem;
@@ -1638,6 +1665,21 @@ with st.sidebar:
             st.rerun()
     else:
         pass
+
+    st.sidebar.markdown(
+        """
+        <div class="connect-inline">Connect with me</div>
+        <a class="connect-link" href="https://www.linkedin.com/in/zacharenakis" target="_blank" rel="noopener noreferrer">
+            <span class="connect-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" role="img" focusable="false">
+                    <path d="M20.45 20.45h-3.56v-5.58c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.13 1.45-2.13 2.95v5.67H9.35V9h3.42v1.56h.05c.48-.9 1.64-1.85 3.38-1.85 3.62 0 4.29 2.38 4.29 5.48v6.26zM5.34 7.43a2.07 2.07 0 1 1 0-4.14 2.07 2.07 0 0 1 0 4.14zM7.12 20.45H3.56V9h3.56v11.45zM22.23 0H1.77C.8 0 0 .77 0 1.72v20.56C0 23.23.8 24 1.77 24h20.46c.98 0 1.77-.77 1.77-1.72V1.72C24 .77 23.2 0 22.23 0z"/>
+                </svg>
+            </span>
+            <span>LinkedIn</span>
+        </a>
+        """,
+        unsafe_allow_html=True,
+    )
 
 applied_filters = st.session_state["applied_filters"]
 if active_page == "dashboard":
