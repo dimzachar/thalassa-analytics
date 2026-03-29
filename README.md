@@ -506,7 +506,7 @@ The main page shows:
 - `Traffic Pulse`: a daily trend chart for passengers, vehicles, and sailings over the view window
 - `Top Corridors`: a ranked view of the busiest departure-arrival pairs by passenger volume
 - `Port Balance`: a ranked view of the busiest ports by total passenger flow
-- A cached intelligence panel backed by `<THALASSA_BQ_DATASET>.intelligence_snapshots`
+- (Optional) A cached intelligence panel backed by `<THALASSA_BQ_DATASET>.intelligence_snapshots` — see [docs/agent_panel.md](docs/agent_panel.md) for how the snapshot pipeline, LLM gating, and fallback logic work 
 
 ![Analytics](docs/Analytics.png)
 
