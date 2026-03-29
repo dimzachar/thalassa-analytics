@@ -32,12 +32,14 @@ This repository is written to satisfy the spirit of the DE Zoomcamp course proje
       - [Manual setup](#manual-setup)
     - [Run the initial backfill](#run-the-initial-backfill)
     - [Launch the dashboard](#launch-the-dashboard)
+    - [Optional: visualize the pipeline DAG](#optional-visualize-the-pipeline-dag)
     - [Change the dataset later](#change-the-dataset-later)
     - [Validate manually](#validate-manually)
     - [Optional: regenerate intelligence snapshots directly](#optional-regenerate-intelligence-snapshots-directly)
     - [Verify that the run worked](#verify-that-the-run-worked)
     - [Delete the GCP resources](#delete-the-gcp-resources)
   - [Dashboard](#dashboard)
+  - [Using AI on Bruin Cloud UI](#using-ai-on-bruin-cloud-ui)
   - [Future improvements](#future-improvements)
   - [Contributing](#contributing)
 
@@ -521,6 +523,31 @@ This means the course dashboard requirement is covered by at least:
 
 - one temporal tile: `Traffic Pulse`
 - one categorical tile: `Top Corridors` or `Port Balance`
+
+## Using AI on Bruin Cloud UI
+
+If you're already running this pipeline, you can connect it to [Bruin Cloud](https://cloud.getbruin.com/) and query your data conversationally through a built-in AI agent.
+
+Connect the project:
+
+Go to Team Settings → Projects and add this repo. Once linked, enable the pipeline to run and backfill from the Cloud UI.
+
+Create an AI agent:
+
+Go to Agents → Create New Agent, select the repo and configure any credentials you need (e.g. Slack). You will also need to configure connections and then start using it.
+
+What you can do:
+
+- Chat with the agent inside the UI to ask questions about the data
+- Review the SQL it generates before it runs
+- Connect to Slack and query from there too
+- Ask the agent to generate a PDF report directly in chat
+
+Pipeline monitoring:
+
+The Cloud UI also doubles as a pipeline dashboard — you can track runs, failures, and lineage without leaving the browser.
+
+![Bruin Cloud Agent](docs/bruincloudai.png)
 
 ## Future improvements
 
