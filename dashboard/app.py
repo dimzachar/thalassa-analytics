@@ -19,6 +19,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+# Inject Streamlit secrets into os.environ before runtime_config reads them
+_ENV_KEYS = ("THALASSA_BQ_PROJECT", "THALASSA_BQ_DATASET", "THALASSA_BQ_LOCATION")
+try:
+    for _k in _ENV_KEYS:
+        if _k in st.secrets and _k not in os.environ:
+            os.environ[_k] = str(st.secrets[_k])
+except Exception:
+    pass
+
 from intelligence import build_agent_context, build_deterministic_report_lines
 from intelligence.bigquery_runtime import create_bigquery_client, job_to_dataframe
 from runtime_config import (
