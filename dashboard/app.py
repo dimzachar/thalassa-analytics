@@ -19,14 +19,33 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-# Inject Streamlit secrets into os.environ before runtime_config reads them
-_ENV_KEYS = ("THALASSA_BQ_PROJECT", "THALASSA_BQ_DATASET", "THALASSA_BQ_LOCATION",
-             "LLM_PROVIDER", "OPENROUTER_API_KEY", "OPENROUTER_MODEL", "OPENROUTER_BASE_URL")
+# Inject Streamlit secrets into os.environ before runtime_config reads them.
+_ENV_KEYS = (
+    "THALASSA_BQ_PROJECT",
+    "THALASSA_BQ_DATASET",
+    "THALASSA_BQ_LOCATION",
+    "LLM_PROVIDER",
+    "OPENROUTER_API_KEY",
+    "OPENROUTER_MODEL",
+    "OPENROUTER_BASE_URL",
+)
+
+
+def _get_secret_value(secrets: st.secrets, key: str) -> str | None:
+    """Read secrets from top-level or a common [env] section."""
+    if key in secrets:
+        return secrets[key]
+    if "env" in secrets and key in secrets["env"]:
+        return secrets["env"][key]
+    return None
+
+
 try:
-    _secrets = st.secrets._secrets  # access the raw dict directly
+    _secrets = st.secrets
     for _k in _ENV_KEYS:
-        if _k in _secrets and _k not in os.environ:
-            os.environ[_k] = str(_secrets[_k])
+        _value = _get_secret_value(_secrets, _k)
+        if _value is not None and _k not in os.environ:
+            os.environ[_k] = str(_value)
 except Exception:
     pass
 
