@@ -20,11 +20,13 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 # Inject Streamlit secrets into os.environ before runtime_config reads them
-_ENV_KEYS = ("THALASSA_BQ_PROJECT", "THALASSA_BQ_DATASET", "THALASSA_BQ_LOCATION")
+_ENV_KEYS = ("THALASSA_BQ_PROJECT", "THALASSA_BQ_DATASET", "THALASSA_BQ_LOCATION",
+             "LLM_PROVIDER", "OPENROUTER_API_KEY", "OPENROUTER_MODEL", "OPENROUTER_BASE_URL")
 try:
+    _secrets = st.secrets._secrets  # access the raw dict directly
     for _k in _ENV_KEYS:
-        if _k in st.secrets and _k not in os.environ:
-            os.environ[_k] = str(st.secrets[_k])
+        if _k in _secrets and _k not in os.environ:
+            os.environ[_k] = str(_secrets[_k])
 except Exception:
     pass
 
