@@ -1882,7 +1882,7 @@ if active_page == "dashboard":
 
     with left:
         with st.container(border=True):
-            _section_header("Traffic Pulse", f"{selected_grain.title()} trend for the selected filter window.")
+            _section_header("Traffic Pulse", f"{selected_grain.title()} trend for the selected View Window.")
             if selected_grain == "daily":
                 pulse_df = daily[["service_date", "rows_count", "total_passengers", "total_vehicles"]].copy()
                 st.vega_lite_chart(_trend_spec(daily), width="stretch")
@@ -1967,7 +1967,7 @@ if active_page == "dashboard":
             # _render_deepen_insight("traffic_pulse", deepen_traffic_pulse_snapshot)
 
         with st.container(border=True):
-            _section_header("Top Corridors", "Highest passenger corridors in the selected date range.")
+            _section_header("Top Corridors", "Highest passenger corridors in the selected View Window.")
             if route_rank.empty:
                 st.markdown('<div class="empty">No route rows for this range.</div>', unsafe_allow_html=True)
             else:
@@ -2027,7 +2027,7 @@ if active_page == "dashboard":
             if use_cached_auto_panel and agent_snapshot_freshness.is_stale:
                 st.warning("Intelligence snapshots are stale or missing (no recent auto_panel snapshot in last 48 hours).")
         with st.container(border=True):
-            _section_header("Port Balance", "Departure + arrival passenger totals by port.")
+            _section_header("Port Balance", "Departure + arrival passenger totals by port in the selected View Window.")
             if port_rank.empty:
                 st.markdown('<div class="empty">No port rows for this range.</div>', unsafe_allow_html=True)
             else:

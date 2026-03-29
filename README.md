@@ -284,7 +284,8 @@ cp .bruin.yml.example .bruin.yml
 
 Then update `.bruin.yml` so the `gcp-default` connection points to your project.
 
-Minimal example:
+<details>
+<summary>Minimal example:</summary>
 
 ```yaml
 default_environment: default
@@ -300,6 +301,8 @@ environments:
 ```
 
 Replace `YOUR_GCP_PROJECT` with your real GCP project ID.
+
+</details>
 
 ### Choose a setup path
 
@@ -417,13 +420,27 @@ uv run --no-project python ./scripts/sync_bruin_dataset.py
 bruin run --full-refresh ./pipeline/assets/ingestion/raw_sailing_traffic.py --downstream --start-date 2025-01-01 --end-date 2025-01-31
 ```
 
-What this does:
+To backfill a larger date range, use `--var 'request_window_unit="month"'` to batch requests by month instead of day. The API data starts from `2017-01-03`.
+
+```powershell
+bruin run .\pipeline\assets\ingestion\raw_sailing_traffic.py --downstream --start-date 2017-01-01 --end-date 2023-12-31 --var 'request_window_unit="month"'
+```
+
+> [!NOTE]
+> The API enforces a 249-day maximum per request window. `month` (max 31 days) is safe. `year` will always fail with a 400.
+
+
+<details>
+<summary>What this does:</summary>
+
 
 - fetches API data for the selected window
 - lands raw rows in `<THALASSA_BQ_DATASET>.raw_sailing_traffic`
 - builds staging, intermediate, marts, and report tables
 - refreshes `<THALASSA_BQ_DATASET>.intelligence_snapshots`
 - triggers the snapshot writer downstream
+</details>
+
 
 ### Launch the dashboard
 
@@ -544,7 +561,9 @@ This means the course dashboard requirement is covered by at least:
 
 Contributions are welcome, especially around data quality, dashboard UX, testing, and deployment hardening.
 
-Before opening a PR:
+
+<details>
+<summary>Before opening a PR:</summary>
 
 1. Keep the change focused on one concern
 2. Run `uv sync` if dependencies changed
@@ -555,3 +574,4 @@ Before opening a PR:
 7. In the PR description, include the purpose of the change, touched paths, and validation commands you ran
 
 For larger changes, opening an issue first is the best way to align on scope before implementation.
+</details>

@@ -11,7 +11,7 @@ def detect_notable_change(
     daily_df: pd.DataFrame,
     routes_df: pd.DataFrame,
     *,
-    delta_threshold_pct: float = 20.0,
+    delta_threshold_pct: float = 5.0,
     concentration_threshold_pct: float = 45.0,
     min_recent_avg_passengers: float = 1000.0,
 ) -> NotableChangeDecision:
