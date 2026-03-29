@@ -71,7 +71,7 @@ if not BQ_PROJECT:
 
 st.set_page_config(
     page_title="Thalassa Grid",
-    page_icon="ferry",
+    page_icon="docs/favicon.png",
     layout="wide",
     initial_sidebar_state="expanded",
 )
