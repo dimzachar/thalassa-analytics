@@ -388,6 +388,28 @@ uv run streamlit run ./dashboard/app.py
 
 Open the local Streamlit URL shown in the terminal.
 
+### Optional: visualize the pipeline DAG
+
+Install [Bruin Visualizer](https://pypi.org/project/bruin-visualizer/) ([source](https://github.com/dimzachar/bruin-viz)) for an interactive DAG view with impact analysis and run history:
+
+```bash
+uv tool install bruin-visualizer
+
+# Parse the pipeline (generates pipeline_graph.json)
+bruin-viz parse ./pipeline
+
+# Open the visualizer at http://localhost:8001
+bruin-viz serve
+```
+
+To also record run history before serving:
+
+```bash
+bruin-viz run ./pipeline --start-date 2025-01-01 --end-date 2025-01-31 --workers 1
+bruin-viz parse ./pipeline
+bruin-viz serve
+```
+
 ### Change the dataset later
 
 Once the project is already set up, use the same script to switch datasets.
