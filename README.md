@@ -104,6 +104,9 @@ To answer those questions reliably, the project builds a repeatable batch pipeli
 
 See [docs/architecture.md](docs/architecture.md) for diagrams, pipeline details, tech stack, warehouse layers, partitioning, and data quality checks.
 
+<img width="1548" height="638" alt="diagram-export-3-29-2026-12_29_40-PM" src="https://github.com/user-attachments/assets/9a4a6c99-f4a7-4ab3-8118-9014da5914a8" />
+
+
 ## Step-by-step reproduction
 
 > [!TIP]
