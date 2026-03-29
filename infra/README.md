@@ -77,6 +77,7 @@ If you want the end-to-end helper instead, use the commands in the main README.
 The pipeline service account gets:
 
 - `roles/bigquery.jobUser` on the project
+- `roles/serviceusage.serviceUsageConsumer` on the project (required for BigQuery usage in Streamlit/Cloud)
 - `roles/bigquery.dataEditor` on the configured dataset
 - `roles/secretmanager.secretAccessor` on the configured runtime secrets
 
