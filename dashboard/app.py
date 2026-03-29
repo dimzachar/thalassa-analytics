@@ -121,6 +121,9 @@ def _inject_styles() -> None:
             --shadow: 0 12px 34px rgba(3, 10, 25, .42);
         }
         #MainMenu, footer { display: none; }
+        header { visibility: hidden; }
+        [data-testid="stToolbar"] { display: none; }
+        [data-testid="stDeployButton"] { display: none; }
         .stApp {
             color: var(--text);
             background: linear-gradient(180deg, var(--bg) 0%, var(--bg2) 100%);
