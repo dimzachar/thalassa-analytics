@@ -469,6 +469,8 @@ FROM `YOUR_GCP_PROJECT.YOUR_THALASSA_BQ_DATASET.row_counts_daily`;
 
 Replace `YOUR_GCP_PROJECT` and `YOUR_THALASSA_BQ_DATASET` with your real values.
 
+For a full set of ready-to-run inspection queries (row counts, date ranges, top routes, top ports, and more), see [`docs/thalassa_queries.sql`](docs/thalassa_queries.sql).
+
 ### Delete the GCP resources
 
 See more about [how cleanup works](infra/README.md#destroy--cleanup).
