@@ -110,7 +110,7 @@ See [docs/architecture.md](docs/architecture.md) for diagrams, pipeline details,
 ## Step-by-step reproduction
 
 > [!TIP]
-> If you are using PowerShell, replace `./` with `.\` in the commands below.
+> Commands shown use Bash/Linux syntax. PowerShell alternatives are available in collapsibles where the commands differ.
 
 > [!IMPORTANT]
 > Required tools:
@@ -162,11 +162,23 @@ Replace `YOUR_GCP_PROJECT` with your real GCP project ID.
 
 Alternative: use a service account JSON file and export one of these variables:
 
+Linux/macOS:
+
 ```bash
 export GOOGLE_APPLICATION_CREDENTIALS=/absolute/path/to/key.json
 # or
 export THALASSA_GCP_SERVICE_ACCOUNT_FILE=/absolute/path/to/key.json
 ```
+
+<details>
+<summary>Windows (PowerShell):</summary>
+
+```powershell
+$env:GOOGLE_APPLICATION_CREDENTIALS = "C:\absolute\path\to\key.json"
+# or
+$env:THALASSA_GCP_SERVICE_ACCOUNT_FILE = "C:\absolute\path\to\key.json"
+```
+</details>
 
 For Streamlit specifically, you can also copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` and fill in the service account values.
 
@@ -174,17 +186,17 @@ For Streamlit specifically, you can also copy `.streamlit/secrets.toml.example` 
 
 If you do not already have a local `.bruin.yml`, create it from the example first.
 
-PowerShell:
-
-```powershell
-Copy-Item .bruin.yml.example .bruin.yml
-```
-
-<details>
-<summary>Bash:</summary>
+Linux/macOS:
 
 ```bash
 cp .bruin.yml.example .bruin.yml
+```
+
+<details>
+<summary>Windows (PowerShell):</summary>
+
+```powershell
+Copy-Item .bruin.yml.example .bruin.yml
 ```
 </details>
 
@@ -222,17 +234,17 @@ Run the command from the repo root after [Authenticate to Google Cloud](#authent
 If `.bruin.yml` does not exist yet, the helper creates it from `.bruin.yml.example` automatically.
 
 
-PowerShell:
-
-```powershell
-.\scripts\set_dataset.ps1 my_dataset -ProjectId YOUR_GCP_PROJECT -Region europe-west1 -BqLocation EU -Environment prod
-```
-
-<details>
-<summary>Bash:</summary>
+Linux/macOS:
 
 ```bash
 ./scripts/set_dataset.sh my_dataset --project-id YOUR_GCP_PROJECT --region europe-west1 --bq-location EU --environment prod
+```
+
+<details>
+<summary>Windows (PowerShell):</summary>
+
+```powershell
+.\scripts\set_dataset.ps1 my_dataset -ProjectId YOUR_GCP_PROJECT -Region europe-west1 -BqLocation EU -Environment prod
 ```
 </details>
 
@@ -273,21 +285,20 @@ Add `-AutoApprove` in PowerShell or `--auto-approve` in Bash if you want a non-i
 
 If you want to control `.env` and Terraform inputs yourself, run these commands from the repo root.
 
-PowerShell:
-
-```powershell
-Copy-Item .env.example .env
-Copy-Item infra/terraform.tfvars.example infra/terraform.tfvars
-```
-
-<details>
-<summary>Bash:</summary>
+Linux/macOS:
 
 ```bash
 cp .env.example .env
 cp infra/terraform.tfvars.example infra/terraform.tfvars
 ```
 
+<details>
+<summary>Windows (PowerShell):</summary>
+
+```powershell
+Copy-Item .env.example .env
+Copy-Item infra/terraform.tfvars.example infra/terraform.tfvars
+```
 </details>
 
 Edit `.env` and set at least:
@@ -329,8 +340,8 @@ bruin run --full-refresh ./pipeline/assets/ingestion/raw_sailing_traffic.py --do
 
 To backfill a larger date range, use `--var 'request_window_unit="month"'` to batch requests by month instead of day. The API data starts from `2017-01-03`.
 
-```powershell
-bruin run .\pipeline\assets\ingestion\raw_sailing_traffic.py --downstream --start-date 2017-01-01 --end-date 2023-12-31 --var 'request_window_unit="month"'
+```bash
+bruin run ./pipeline/assets/ingestion/raw_sailing_traffic.py --downstream --start-date 2017-01-01 --end-date 2023-12-31 --var 'request_window_unit="month"'
 ```
 
 > [!NOTE]
@@ -363,19 +374,18 @@ Once the project is already set up, use the same script to switch datasets.
 
 For a local-only switch without Terraform:
 
-PowerShell:
-
-```powershell
-.\scripts\set_dataset.ps1 my_dataset -SkipTerraform
-```
-
-<details>
-<summary>Bash:</summary>
+Linux/macOS:
 
 ```bash
 ./scripts/set_dataset.sh my_dataset --skip-terraform
 ```
 
+<details>
+<summary>Windows (PowerShell):</summary>
+
+```powershell
+.\scripts\set_dataset.ps1 my_dataset -SkipTerraform
+```
 </details>
 
 Replace `my_dataset` with the dataset name you want.
@@ -442,16 +452,26 @@ If you want Terraform to delete the dataset contents too:
 
 ## Dashboard
 
-The dashboard reads curated BigQuery tables, not raw API payloads.
+The dashboard reads curated BigQuery tables, not raw API payloads. The default view window is the last 90 days, giving an at-a-glance picture of recent traffic.
 
-Main outputs include:
+![Dashboard](docs/Dashboard.png)
 
-- KPI cards for passengers, vehicles, active corridors, concentration, and leading port
-- `Traffic Pulse`: a temporal trend chart for daily, weekly, or monthly movement
-- `Top Corridors`: a categorical ranking of the busiest departure-arrival pairs
-- `Port Balance`: a categorical ranking of the busiest ports by passenger flow
-- Analytics views for weekday profile, corridor concentration, corridor efficiency, and port net flow
+The main page shows:
+
+- KPI cards for total passengers, total vehicles, active corridors, traffic concentration, and the leading port
+- `Traffic Pulse`: a daily trend chart for passengers, vehicles, and sailings over the view window
+- `Top Corridors`: a ranked view of the busiest departure-arrival pairs by passenger volume
+- `Port Balance`: a ranked view of the busiest ports by total passenger flow
 - A cached intelligence panel backed by `<THALASSA_BQ_DATASET>.intelligence_snapshots`
+
+![Analytics](docs/Analytics.png)
+
+The Analytics page lets users filter by date range, port, and corridor to explore:
+
+- weekday traffic profile
+- corridor concentration over time
+- corridor efficiency metrics
+- port net flow (arrivals vs departures)
 
 This means the course dashboard requirement is covered by at least:
 

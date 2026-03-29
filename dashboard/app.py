@@ -809,9 +809,9 @@ def _icon_svg(name: str) -> str:
     """Return the glyph used by a KPI card icon slot."""
     icons = {
         "passengers": "👥",
-        "vehicles": "🚗",
-        "corridors": "🧭",
-        "share": "◔",
+        "vehicles": "🚢",
+        "corridors": "🗺️",
+        "share": "📊",
         "port": "⚓",
     }
     return icons.get(name, icons["passengers"])
