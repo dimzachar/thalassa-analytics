@@ -15,18 +15,12 @@ This repository is written to satisfy the spirit of the DE Zoomcamp course proje
 
 - [Thalassa](#thalassa)
   - [Table of contents](#table-of-contents)
+  - [Repository layout](#repository-layout)
   - [Quick start](#quick-start)
   - [Problem statement and Dataset](#problem-statement-and-dataset)
     - [Dataset](#dataset)
   - [Course project requirements mapping](#course-project-requirements-mapping)
   - [Architecture](#architecture)
-  - [Batch pipeline details](#batch-pipeline-details)
-  - [Tech stack](#tech-stack)
-  - [Repository layout](#repository-layout)
-  - [Warehouse layers and key models](#warehouse-layers-and-key-models)
-  - [BigQuery optimization and data quality](#bigquery-optimization-and-data-quality)
-    - [Partitioning and clustering](#partitioning-and-clustering)
-    - [Data quality checks](#data-quality-checks)
   - [Step-by-step reproduction](#step-by-step-reproduction)
     - [Clone the repository](#clone-the-repository)
     - [Install Python dependencies](#install-python-dependencies)
@@ -47,9 +41,21 @@ This repository is written to satisfy the spirit of the DE Zoomcamp course proje
   - [Future improvements](#future-improvements)
   - [Contributing](#contributing)
 
-## Quick start
+## Repository layout
 
-If you want the shortest reviewer path, use the full guide below but only touch these sections:
+- `.bruin.yml.example`: Bruin connection config template
+- `.env.example`: local environment template
+- `.streamlit/`: copy `secrets.toml.example` to `secrets.toml` for service account auth
+- `dashboard/`: Streamlit dashboard
+- `infra/`: Terraform for GCP foundation
+- `notebooks/`: exploration notebooks
+- `pipeline/`: Bruin pipeline
+- `pyproject.toml`: Python project and dependency definitions
+- `runtime_config.py`: shared runtime configuration helpers
+- `scripts/`: operational helpers — dataset sync, snapshot generation, parity checks
+- `uv.lock`: locked dependency versions
+
+## Quick start
 
 1. [Clone the repository](#clone-the-repository) and run `uv sync`.
 2. Complete [Authenticate to Google Cloud](#authenticate-to-google-cloud).
@@ -96,109 +102,7 @@ To answer those questions reliably, the project builds a repeatable batch pipeli
 
 ## Architecture
 
-```text
-data.gov.gr sailing_traffic API
-        |
-        v
-Bruin Python ingestion asset
-`pipeline/assets/ingestion/raw_sailing_traffic.py`
-        |
-        v
-BigQuery raw landing table
-`<THALASSA_BQ_DATASET>.raw_sailing_traffic`
-        |
-        v
-Bruin SQL transformations
-staging -> intermediate -> marts -> reports
-        |
-        +--> `<THALASSA_BQ_DATASET>.row_counts_*`
-        +--> `<THALASSA_BQ_DATASET>.fct_route_traffic_*`
-        +--> `<THALASSA_BQ_DATASET>.fct_port_activity_*`
-        +--> `<THALASSA_BQ_DATASET>.dim_*`
-        +--> `<THALASSA_BQ_DATASET>.intelligence_snapshots`
-        |
-        v
-Streamlit dashboard
-`dashboard/app.py`
-```
-
-## Batch pipeline details
-
-The pipeline is defined in `pipeline/pipeline.yml` and is scheduled as `daily` starting from `2024-01-01`.
-
-Runtime behavior is controlled with Bruin variables such as:
-
-- `request_window_unit`
-- `request_window_size`
-- `request_max_retries`
-- `request_retry_base_delay_seconds`
-- `request_retry_max_delay_seconds`
-- `request_failed_window_replay_passes`
-- `request_failed_window_replay_delay_seconds`
-
-The ingestion asset calls the public API in windows, retries transient failures, replays failed windows, and stores the raw JSON payload for traceability.
-
-## Tech stack
-
-| Layer | Tooling |
-| --- | --- |
-| Ingestion and orchestration | Bruin |
-| Transformation | SQL + Bruin model metadata |
-| Language runtime | Python 3.11+ |
-| Warehouse | BigQuery |
-| Cloud | GCP |
-| IaC | Terraform |
-| Dashboard | Streamlit + Altair/Vega-Lite |
-| Secrets and auth | GCP ADC, optional service account file, Secret Manager |
-| Optional intelligence layer | OpenRouter, Anthropic, or Gemini with BigQuery snapshot caching |
-
-## Repository layout
-
-These are the folders that matter for reproducing the project:
-
-- `pipeline/`: canonical production pipeline
-- `dashboard/`: Streamlit dashboard and intelligence helpers
-- `infra/`: Terraform for GCP foundation; see `infra/README.md` for IAM and cleanup details
-- `scripts/`: local operational helpers, including snapshot generation
-- `docs/`: supporting architecture and optimization notes
-- `.env.example`: local environment template
-- `.streamlit/secrets.toml.example`: optional Streamlit service account template
-
-## Warehouse layers and key models
-
-| Layer | Purpose | Main assets |
-| --- | --- | --- |
-| Raw landing | Append-only source landing with `raw_payload` preserved | `<THALASSA_BQ_DATASET>.raw_sailing_traffic` |
-| Staging | Type cleanup, text normalization, safe casting | `<THALASSA_BQ_DATASET>.stg_sailing_traffic` |
-| Intermediate | Canonical record grain and reusable aggregates | `<THALASSA_BQ_DATASET>.int_traffic_record`, `<THALASSA_BQ_DATASET>.int_route_day`, `<THALASSA_BQ_DATASET>.int_port_movement`, `<THALASSA_BQ_DATASET>.int_port_day` |
-| Marts | Dashboard-facing dimensions and fact tables | `<THALASSA_BQ_DATASET>.dim_route`, `<THALASSA_BQ_DATASET>.dim_route_pair`, `<THALASSA_BQ_DATASET>.dim_port`, `<THALASSA_BQ_DATASET>.fct_route_traffic_daily`, `<THALASSA_BQ_DATASET>.fct_port_activity_daily`, weekly/monthly rollups |
-| Reports | Quality and profiling outputs | `<THALASSA_BQ_DATASET>.row_counts_daily`, `<THALASSA_BQ_DATASET>.row_counts_weekly`, `<THALASSA_BQ_DATASET>.row_counts_monthly`, `<THALASSA_BQ_DATASET>.row_counts_yearly` |
-| Intelligence | Cached narrative layer for the UI | `<THALASSA_BQ_DATASET>.intelligence_snapshots`, `<THALASSA_BQ_DATASET>.auto_panel_snapshot_writer` |
-
-## BigQuery optimization and data quality
-
-### Partitioning and clustering
-
-The canonical warehouse models are optimized for analytic reads.
-
-- Daily tables are partitioned by `service_date`
-- Weekly tables are partitioned by `week_start`
-- Monthly tables are partitioned by `year_month`
-- Route-heavy tables are clustered by `departure_port`, `arrival_port`, and `route_pair_key`
-- Port-heavy tables are clustered by `port_name`
-
-This matters because the dashboard almost always filters by date and then slices by route or port.
-
-### Data quality checks
-
-Bruin checks are embedded directly in the assets.
-
-Examples already implemented:
-
-- `not_null`, `unique`, `positive`, and `non_negative` checks on key columns
-- safe-cast checks for passenger and vehicle counts
-- collision checks for `route_key` and `route_pair_key`
-- accepted values checks for movement types
+See [docs/architecture.md](docs/architecture.md) for diagrams, pipeline details, tech stack, warehouse layers, partitioning, and data quality checks.
 
 ## Step-by-step reproduction
 

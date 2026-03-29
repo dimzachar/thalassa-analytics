@@ -13,7 +13,7 @@ logs/runs
 logs/*.log
 *.py[cod]
 
-docs/*
+# docs/*
 .md
 backup/
 logs/*
