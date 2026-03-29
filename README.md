@@ -57,7 +57,7 @@ This repository is written to satisfy the spirit of the DE Zoomcamp course proje
 
 ## Quick start
 
-1. [Clone the repository](#clone-the-repository) and run `uv sync`.
+1. [Clone the repository](#clone-the-repository) and run `uv sync` (or `uv sync --extra local` for dashboard + notebooks).
 2. Complete [Authenticate to Google Cloud](#authenticate-to-google-cloud).
 3. Run the setup flow in [Choose a setup path](#choose-a-setup-path). If the dataset and infrastructure already exist, use the local-only switch in [Change the dataset later](#change-the-dataset-later) instead.
 4. [Run the initial backfill](#run-the-initial-backfill).
@@ -133,8 +133,28 @@ cd thalassa-analytics
 
 ### Install Python dependencies
 
+Install core dependencies only:
+
 ```bash
 uv sync
+```
+
+Install with the Streamlit dashboard and DuckDB local mirror:
+
+```bash
+uv sync --extra dashboard
+```
+
+Install with Jupyter notebooks support:
+
+```bash
+uv sync --extra notebooks
+```
+
+Install everything (dashboard + notebooks + DuckDB):
+
+```bash
+uv sync --extra local
 ```
 
 ### Create or choose a GCP project
@@ -493,7 +513,7 @@ Contributions are welcome, especially around data quality, dashboard UX, testing
 <summary>Before opening a PR:</summary>
 
 1. Keep the change focused on one concern
-2. Run `uv sync` if dependencies changed
+2. Run `uv sync` (or `uv sync --extra local`) if dependencies changed
 3. Run `uv run --no-project python ./scripts/sync_bruin_dataset.py`
 4. Run `bruin validate ./pipeline`
 5. If you changed SQL models or ingestion logic, run the relevant `bruin run` command for a representative date window

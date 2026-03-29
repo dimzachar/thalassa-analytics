@@ -2520,34 +2520,51 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "db-dtypes" },
-    { name = "duckdb" },
     { name = "google-cloud-bigquery" },
     { name = "google-cloud-bigquery-storage" },
-    { name = "jupyter" },
     { name = "pandas" },
     { name = "pyarrow" },
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "requests" },
+]
+
+[package.optional-dependencies]
+dashboard = [
     { name = "streamlit" },
     { name = "streamlit-option-menu" },
+]
+local = [
+    { name = "duckdb" },
+    { name = "jupyter" },
+    { name = "streamlit" },
+    { name = "streamlit-option-menu" },
+]
+notebooks = [
+    { name = "duckdb" },
+    { name = "jupyter" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "db-dtypes", specifier = ">=1.4.3" },
-    { name = "duckdb", specifier = ">=1.2" },
+    { name = "duckdb", marker = "extra == 'local'", specifier = ">=1.2" },
+    { name = "duckdb", marker = "extra == 'notebooks'", specifier = ">=1.2" },
     { name = "google-cloud-bigquery", specifier = ">=3.38.0" },
     { name = "google-cloud-bigquery-storage", specifier = ">=2.36.2" },
-    { name = "jupyter", specifier = ">=1.1.1" },
+    { name = "jupyter", marker = "extra == 'local'", specifier = ">=1.1.1" },
+    { name = "jupyter", marker = "extra == 'notebooks'", specifier = ">=1.1.1" },
     { name = "pandas", specifier = ">=2.2" },
     { name = "pyarrow", specifier = ">=20.0.0" },
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "requests", specifier = ">=2.32" },
-    { name = "streamlit", specifier = ">=1.44" },
-    { name = "streamlit-option-menu", specifier = ">=0.4.0" },
+    { name = "streamlit", marker = "extra == 'dashboard'", specifier = ">=1.44" },
+    { name = "streamlit", marker = "extra == 'local'", specifier = ">=1.44" },
+    { name = "streamlit-option-menu", marker = "extra == 'dashboard'", specifier = ">=0.4.0" },
+    { name = "streamlit-option-menu", marker = "extra == 'local'", specifier = ">=0.4.0" },
 ]
+provides-extras = ["dashboard", "notebooks", "local"]
 
 [[package]]
 name = "tinycss2"

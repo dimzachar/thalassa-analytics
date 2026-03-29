@@ -5,15 +5,27 @@ description = "Local Bruin, DuckDB, and Streamlit project for Greek sailing traf
 requires-python = ">=3.11"
 dependencies = [
     "db-dtypes>=1.4.3",
-    "duckdb>=1.2",
     "google-cloud-bigquery>=3.38.0",
-    "jupyter>=1.1.1",
+    "google-cloud-bigquery-storage>=2.36.2",
     "pandas>=2.2",
     "pyarrow>=20.0.0",
     "python-dotenv>=1.1.1",
     "pydantic>=2.11.7",
     "requests>=2.32",
+]
+
+[project.optional-dependencies]
+dashboard = [
     "streamlit>=1.44",
     "streamlit-option-menu>=0.4.0",
-    "google-cloud-bigquery-storage>=2.36.2",
+]
+notebooks = [
+    "jupyter>=1.1.1",
+    "duckdb>=1.2",
+]
+local = [
+    "duckdb>=1.2",
+    "streamlit>=1.44",
+    "streamlit-option-menu>=0.4.0",
+    "jupyter>=1.1.1",
 ]
