@@ -52,7 +52,7 @@ This repository is written to satisfy the spirit of the DE Zoomcamp course proje
 If you want the shortest reviewer path, use the full guide below but only touch these sections:
 
 1. [Clone the repository](#clone-the-repository) and run `uv sync`.
-2. Complete [Authenticate to Google Cloud](#authenticate-to-google-cloud) and [Configure Bruin](#configure-bruin).
+2. Complete [Authenticate to Google Cloud](#authenticate-to-google-cloud).
 3. Run the setup flow in [Choose a setup path](#choose-a-setup-path). If the dataset and infrastructure already exist, use the local-only switch in [Change the dataset later](#change-the-dataset-later) instead.
 4. [Run the initial backfill](#run-the-initial-backfill).
 5. [Launch the dashboard](#launch-the-dashboard).
@@ -265,7 +265,24 @@ For Streamlit specifically, you can also copy `.streamlit/secrets.toml.example` 
 
 ### Configure Bruin
 
-Update `.bruin.yml` so the `gcp-default` connection points to your project.
+If you do not already have a local `.bruin.yml`, create it from the example first.
+
+PowerShell:
+
+```powershell
+Copy-Item .bruin.yml.example .bruin.yml
+```
+
+<details>
+<summary>Bash:</summary>
+
+```bash
+cp .bruin.yml.example .bruin.yml
+```
+</details>
+
+
+Then update `.bruin.yml` so the `gcp-default` connection points to your project.
 
 Minimal example:
 
@@ -291,7 +308,8 @@ Pick one of these and follow only that one.
 #### One-click setup (recommended)
 
 Use this when you want one command to set the dataset, sync Bruin, validate the pipeline, and apply Terraform.
-Run the command from the repo root after [Authenticate to Google Cloud](#authenticate-to-google-cloud) and [Configure Bruin](#configure-bruin) are done.
+Run the command from the repo root after [Authenticate to Google Cloud](#authenticate-to-google-cloud) is done.
+If `.bruin.yml` does not exist yet, the helper creates it from `.bruin.yml.example` automatically.
 
 
 PowerShell:
@@ -318,11 +336,15 @@ PowerShell:
 >- creates `.env` from `.env.example` if needed
 >- sets `THALASSA_BQ_DATASET`
 >- sets `THALASSA_BQ_PROJECT` and `THALASSA_BQ_LOCATION` when you pass them
+>- creates `.bruin.yml` from the example if needed
+>- updates the `gcp-default` Bruin connection project and location
 >- creates `infra/terraform.tfvars` from the example if needed
 >- writes `project_id`, `region`, `bq_location`, and `environment`
 >- syncs Bruin asset dataset prefixes
 >- runs `bruin validate ./pipeline --fast`
->- runs `terraform init`, `plan`, and `apply`
+>- runs `terraform init`
+>- selects or creates a dataset-specific Terraform workspace
+>- runs `terraform plan` and `apply`
 >
 ></details>
 ---
@@ -377,6 +399,7 @@ Then sync Bruin and apply the infrastructure:
 uv run --no-project python ./scripts/sync_bruin_dataset.py
 bruin validate ./pipeline --fast
 terraform -chdir=infra init
+terraform -chdir=infra workspace select dataset-my_dataset || terraform -chdir=infra workspace new dataset-my_dataset
 terraform -chdir=infra plan
 terraform -chdir=infra apply
 ```
@@ -422,10 +445,8 @@ PowerShell:
 .\scripts\set_dataset.ps1 my_dataset -SkipTerraform
 ```
 
-Bash:
-
 <details>
-<summary>Click to expand</summary>
+<summary>Bash:</summary>
 
 ```bash
 ./scripts/set_dataset.sh my_dataset --skip-terraform
@@ -481,27 +502,18 @@ Replace `YOUR_GCP_PROJECT` and `YOUR_THALASSA_BQ_DATASET` with your real values.
 
 ### Delete the GCP resources
 
-If you are done with the project and want to delete the GCP resources, run:
+See more about [how cleanup works](infra/README.md#destroy--cleanup).
 
 ```bash
+terraform -chdir=infra workspace select dataset-YOUR_THALASSA_BQ_DATASET
 terraform -chdir=infra destroy
 ```
 
-Run that from the repo root with the same `infra/terraform.tfvars` and `.env` values you used when you applied the infrastructure.
-If you changed the dataset later, switch back to the deployed dataset first so Terraform points at the right resources.
+If you want Terraform to delete the dataset contents too:
 
-Important:
-
-- the BigQuery dataset is protected by default because `dataset_delete_contents_on_destroy = false`
-- if the dataset still has tables in it, `terraform destroy` will fail instead of deleting your data
-
-If you want Terraform to delete the dataset and everything inside it too:
-
-1. edit `infra/terraform.tfvars`
-2. set `dataset_delete_contents_on_destroy = true`
+1. set `dataset_delete_contents_on_destroy = true` in `infra/terraform.tfvars`
+2. run `terraform -chdir=infra workspace select dataset-YOUR_THALASSA_BQ_DATASET`
 3. run `terraform -chdir=infra destroy`
-
-If you want to keep the safer default, leave it as `false` and manually empty or delete the dataset tables first.
 
 
 ## Dashboard

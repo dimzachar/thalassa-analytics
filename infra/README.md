@@ -55,12 +55,17 @@ Example:
 - service account `my-dataset-pipeline`
 - Artifact Registry repo `my-dataset`
 
+The helper scripts use a separate Terraform workspace per dataset:
+
+- `dataset-my_dataset`
+
 ## Direct Terraform Commands
 
 If you are working on infra directly, run from the repo root:
 
 ```bash
 terraform -chdir=infra init
+terraform -chdir=infra workspace select dataset-my_dataset || terraform -chdir=infra workspace new dataset-my_dataset
 terraform -chdir=infra plan
 terraform -chdir=infra apply
 ```
@@ -98,11 +103,13 @@ They are only needed if you want LLM-generated intelligence text.
 When you are done and want to delete the GCP resources, run:
 
 ```bash
+terraform -chdir=infra workspace select dataset-my_dataset
 terraform -chdir=infra destroy
 ```
 
-Use the same `infra/terraform.tfvars` and `../.env` values that were used for `terraform apply`.
-If you changed the dataset later, switch back to the deployed dataset first.
+Use the same `infra/terraform.tfvars` values and dataset workspace that were used for `terraform apply`.
+Dataset workspaces delete only dataset-scoped resources.
+Do not run `terraform destroy` from the default workspace unless you intentionally want to manage shared project-wide resources such as enabled APIs and optional shared secret slots.
 
 Important:
 
@@ -112,6 +119,7 @@ Important:
 If you want Terraform to delete the dataset contents too:
 
 1. set `dataset_delete_contents_on_destroy = true` in `infra/terraform.tfvars`
-2. run `terraform -chdir=infra destroy`
+2. run `terraform -chdir=infra workspace select dataset-my_dataset`
+3. run `terraform -chdir=infra destroy`
 
 If you prefer the safer default, keep it `false` and manually empty the dataset first.

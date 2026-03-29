@@ -19,6 +19,8 @@ if ($DatasetId -notmatch '^[A-Za-z_][A-Za-z0-9_]*$') {
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $EnvFile = Join-Path $ProjectRoot ".env"
 $EnvExample = Join-Path $ProjectRoot ".env.example"
+$BruinConfigFile = Join-Path $ProjectRoot ".bruin.yml"
+$BruinConfigExample = Join-Path $ProjectRoot ".bruin.yml.example"
 $TfvarsFile = Join-Path $ProjectRoot "infra\terraform.tfvars"
 $TfvarsExample = Join-Path $ProjectRoot "infra\terraform.tfvars.example"
 $TfWorkspace = "dataset-$($DatasetId.ToLowerInvariant())"
@@ -70,6 +72,38 @@ function Remove-EnvVar {
     }
 
     Set-Content -Path $FilePath -Value $content
+}
+
+function Upsert-YamlScalar {
+    param(
+        [string]$Key,
+        [string]$Value,
+        [string]$FilePath
+    )
+
+    $line = "          $Key: $Value"
+    if (-not (Test-Path $FilePath)) {
+        Set-Content -Path $FilePath -Value $line
+        return
+    }
+
+    $content = Get-Content -Path $FilePath
+    $updated = $false
+    $newContent = foreach ($entry in $content) {
+        if (-not $updated -and $entry -match "^(\s*)$([regex]::Escape($Key)):\s*.*$") {
+            $updated = $true
+            "$($Matches[1])$Key: $Value"
+        }
+        else {
+            $entry
+        }
+    }
+
+    if (-not $updated) {
+        $newContent += $line
+    }
+
+    Set-Content -Path $FilePath -Value $newContent
 }
 
 function Upsert-TfvarsString {
@@ -191,6 +225,20 @@ function Select-TerraformWorkspace {
     Write-Host "Created Terraform workspace '$WorkspaceName'."
 }
 
+function Ensure-BruinConfig {
+    if (-not (Test-Path $BruinConfigFile)) {
+        Copy-Item $BruinConfigExample $BruinConfigFile
+        Write-Host "Created $BruinConfigFile from .bruin.yml.example"
+    }
+
+    if ($ProjectId) {
+        Upsert-YamlScalar -Key "project_id" -Value $ProjectId -FilePath $BruinConfigFile
+    }
+    if ($BqLocation) {
+        Upsert-YamlScalar -Key "location" -Value $BqLocation -FilePath $BruinConfigFile
+    }
+}
+
 Write-Host "Configuring dataset '$DatasetId'..."
 
 if (-not (Test-Path $EnvFile)) {
@@ -207,6 +255,7 @@ if ($BqLocation) {
     Upsert-EnvVar -Key "THALASSA_BQ_LOCATION" -Value $BqLocation -FilePath $EnvFile
 }
 
+Ensure-BruinConfig
 Warn-CredentialOverrides
 
 Push-Location $ProjectRoot

@@ -5,6 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE="${PROJECT_ROOT}/.env"
 ENV_EXAMPLE="${PROJECT_ROOT}/.env.example"
+BRUIN_CONFIG_FILE="${PROJECT_ROOT}/.bruin.yml"
+BRUIN_CONFIG_EXAMPLE="${PROJECT_ROOT}/.bruin.yml.example"
 TFVARS_FILE="${PROJECT_ROOT}/infra/terraform.tfvars"
 TFVARS_EXAMPLE="${PROJECT_ROOT}/infra/terraform.tfvars.example"
 UV_CACHE_DIR="${UV_CACHE_DIR:-/tmp/uv-cache}"
@@ -129,6 +131,19 @@ upsert_tfvars_string() {
   fi
 }
 
+upsert_yaml_scalar() {
+  local key="$1"
+  local value="$2"
+  local file="$3"
+  local indent="          "
+
+  if grep -Eq "^[[:space:]]*${key}:" "${file}"; then
+    sed -i -E "0,/^([[:space:]]*)${key}:.*/s//\\1${key}: ${value}/" "${file}"
+  else
+    printf '%s%s: %s\n' "${indent}" "${key}" "${value}" >> "${file}"
+  fi
+}
+
 remove_tfvars_key() {
   local key="$1"
   local file="$2"
@@ -182,6 +197,20 @@ select_terraform_workspace() {
 
   run_terraform -chdir=infra workspace new "${workspace}" >/dev/null
   echo "Created Terraform workspace '${workspace}'."
+}
+
+ensure_bruin_config() {
+  if [[ ! -f "${BRUIN_CONFIG_FILE}" ]]; then
+    cp "${BRUIN_CONFIG_EXAMPLE}" "${BRUIN_CONFIG_FILE}"
+    echo "Created ${BRUIN_CONFIG_FILE} from .bruin.yml.example"
+  fi
+
+  if [[ -n "${PROJECT_ID}" ]]; then
+    upsert_yaml_scalar "project_id" "${PROJECT_ID}" "${BRUIN_CONFIG_FILE}"
+  fi
+  if [[ -n "${BQ_LOCATION}" ]]; then
+    upsert_yaml_scalar "location" "${BQ_LOCATION}" "${BRUIN_CONFIG_FILE}"
+  fi
 }
 
 resolve_cli() {
@@ -257,6 +286,7 @@ if [[ -n "${BQ_LOCATION}" ]]; then
   upsert_env_var "THALASSA_BQ_LOCATION" "${BQ_LOCATION}" "${ENV_FILE}"
 fi
 
+ensure_bruin_config
 warn_credential_overrides
 
 echo "Syncing Bruin asset prefixes..."
