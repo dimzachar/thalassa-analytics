@@ -2527,6 +2527,8 @@ dependencies = [
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "requests" },
+    { name = "streamlit" },
+    { name = "streamlit-option-menu" },
 ]
 
 [package.optional-dependencies]
@@ -2559,8 +2561,10 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "python-dotenv", specifier = ">=1.1.1" },
     { name = "requests", specifier = ">=2.32" },
+    { name = "streamlit", specifier = ">=1.44" },
     { name = "streamlit", marker = "extra == 'dashboard'", specifier = ">=1.44" },
     { name = "streamlit", marker = "extra == 'local'", specifier = ">=1.44" },
+    { name = "streamlit-option-menu", specifier = ">=0.4.0" },
     { name = "streamlit-option-menu", marker = "extra == 'dashboard'", specifier = ">=0.4.0" },
     { name = "streamlit-option-menu", marker = "extra == 'local'", specifier = ">=0.4.0" },
 ]
