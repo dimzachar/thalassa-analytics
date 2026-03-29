@@ -171,7 +171,7 @@ function Invoke-NativeCommand {
     if ((-not $commandSucceeded) -or ($null -ne $exitCode -and $exitCode -ne 0)) {
         $renderedArgs = if ($ArgumentList) { $ArgumentList -join " " } else { "" }
         $renderedExitCode = if ($null -ne $exitCode) { $exitCode } else { "unknown" }
-        throw "Command failed with exit code $renderedExitCode: $FilePath $renderedArgs".Trim()
+        throw ("Command failed with exit code {0}: {1} {2}" -f $renderedExitCode, $FilePath, $renderedArgs).Trim()
     }
 }
 
