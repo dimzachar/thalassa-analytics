@@ -410,6 +410,8 @@ bruin-viz parse ./pipeline
 bruin-viz serve
 ```
 
+![Bruin Visualizer](docs/bruinviz.png)
+
 ### Change the dataset later
 
 Once the project is already set up, use the same script to switch datasets.
