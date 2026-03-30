@@ -359,12 +359,6 @@ To backfill a larger date range, use `--var 'request_window_unit="month"'` to ba
 bruin run ./pipeline/assets/ingestion/raw_sailing_traffic.py --downstream --start-date 2017-01-01 --end-date 2023-12-31 --var 'request_window_unit="month"'
 ```
 
-If your source publishes data with delay, add a lag offset (for example `1` day):
-
-```bash
-bruin run ./pipeline/assets/ingestion/raw_sailing_traffic.py --downstream --start-date 2026-03-29 --end-date 2026-03-29 --var "source_data_lag_days=1"
-```
-
 > [!NOTE]
 > The API enforces a 249-day maximum per request window. `month` (max 31 days) is safe. `year` will always fail with a 400.
 
@@ -501,6 +495,8 @@ If you want Terraform to delete the dataset contents too:
 
 The dashboard reads curated BigQuery tables, not raw API payloads. The default view window is the last 90 days, giving an at-a-glance picture of recent traffic.
 
+Dashboard query caching is data-aware: cached reads are automatically invalidated when key warehouse tables (`row_counts_daily`, `fct_route_traffic_daily`, `fct_port_activity_daily`, `intelligence_snapshots`) are updated.
+
 ![Dashboard](docs/Dashboard.png)
 
 The main page shows:
@@ -547,6 +543,20 @@ What you can do:
 Pipeline monitoring:
 
 The Cloud UI also doubles as a pipeline dashboard — you can track runs, failures, and lineage without leaving the browser.
+
+Scheduled lag setting on Bruin Cloud:
+
+- For the `thalassa` scheduled run in Bruin Cloud, keep `source_data_lag_days=1` so each daily run reads the intended delayed date window.
+- Re-running the same interval with `strategy: append` can append duplicate rows in `raw_sailing_traffic` (downstream models deduplicate by `record_hash`).
+
+Enable LLM overlay in scheduled pipeline snapshots:
+
+- Create three `Generic Secret` connections in Bruin Cloud:
+- `openrouter_api_key` → your OpenRouter API key
+- `openrouter_model` → your preferred OpenRouter model id (optional)
+- `openrouter_base_url` → `https://openrouter.ai/api/v1`
+- The `thalassa.auto_panel_snapshot_writer` asset injects these as `OPENROUTER_API_KEY`, `OPENROUTER_MODEL`, and `OPENROUTER_BASE_URL`.
+- Verify from run logs: `mode=llm_overlay` indicates the LLM path was used.
 
 ![Bruin Cloud Agent](docs/bruincloudai.png)
 
