@@ -443,7 +443,12 @@ def get_data_refresh_token() -> str:
             ORDER BY table_name
         ) AS data_token
         FROM `{BQ_PROJECT}.{BQ_DATASET}.INFORMATION_SCHEMA.TABLES`
-        WHERE table_name IN ('row_counts_daily', 'fct_route_traffic_daily', 'fct_port_activity_daily')
+        WHERE table_name IN (
+            'row_counts_daily',
+            'fct_route_traffic_daily',
+            'fct_port_activity_daily',
+            'intelligence_snapshots'
+        )
     """
     try:
         metadata_job = client.query(metadata_query)
@@ -482,7 +487,7 @@ def get_data_refresh_token() -> str:
 @st.cache_data(show_spinner=False)
 def _run_query(
     query: str,
-    data_token: str,
+    data_token: str = "",
     scalar_params: tuple[tuple[str, str, object], ...] = (),
     timeout_seconds: int = 30,
 ) -> pd.DataFrame:
@@ -1908,7 +1913,12 @@ top_routes_scatter = route_rank.head(top_n).copy()  # respects ranking depth sli
 top_ports_net = _port_netflow_from_routes(routes).head(top_n).copy()
 
 agent_context = build_agent_context(
-    _run_query,
+    lambda query, scalar_params=(), timeout_seconds=30: _run_query(
+        query=query,
+        data_token=data_refresh_token,
+        scalar_params=scalar_params,
+        timeout_seconds=timeout_seconds,
+    ),
     _qualify,
     table_name=INTELLIGENCE_TABLE,
     daily_df=daily,
