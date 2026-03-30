@@ -8,10 +8,13 @@ secrets:
     inject_as: GCP_CONN
   - key: openrouter_api_key
     inject_as: OPENROUTER_API_KEY
+    required: false
   - key: openrouter_model
     inject_as: OPENROUTER_MODEL
+    required: false
   - key: openrouter_base_url
     inject_as: OPENROUTER_BASE_URL
+    required: false
 
 depends:
   - thalassa.intelligence_snapshots

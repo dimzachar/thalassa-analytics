@@ -8,6 +8,12 @@ environments:
           project_id: YOUR_GCP_PROJECT
           location: EU
           use_application_default_credentials: true
+      # Optional placeholder secrets for auto_panel_snapshot_writer.
+      # Keep these names even when values are empty so local deterministic fallback runs.
+      generic:
+        - name: openrouter_api_key
+        - name: openrouter_model
+        - name: openrouter_base_url
       # duckdb:
       #   - name: duckdb-default
       #     path: duckdb.db

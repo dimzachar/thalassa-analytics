@@ -234,6 +234,7 @@ def _inject_styles() -> None:
         .mini { border:1px solid var(--stroke); border-radius:.78rem; padding:.8rem .9rem; background: linear-gradient(180deg, var(--panel) 0%, var(--panel2) 100%); }
         .mini .k { font-size:.68rem; text-transform:uppercase; letter-spacing:.13em; color:var(--muted); }
         .mini .v { margin-top:.2rem; font-size:1rem; font-weight:600; }
+        .mini .sub { margin-top:.22rem; font-size:.78rem; color:var(--muted); }
         .analytics-chips {
             display:grid;
             grid-template-columns: repeat(3, minmax(0,1fr));
@@ -512,7 +513,10 @@ def load_date_bounds(data_token: str) -> pd.DataFrame:
     """Load the min and max service dates available in the dataset."""
     return _run_query(
         f"""
-        SELECT MIN(service_date) AS min_date, MAX(service_date) AS max_date
+        SELECT
+            MIN(service_date) AS min_date,
+            MAX(service_date) AS max_date,
+            COUNT(DISTINCT service_date) AS days_available
         FROM {_qualify(build_dataset_table('row_counts_daily', BQ_DATASET))}
         """,
         data_token=data_token,
@@ -1513,6 +1517,29 @@ def _format_snapshot_age(hours_since: float | None) -> str:
     return f"Updated {hours_since:.1f}h ago"
 
 
+def _date_span_days(start: object, end: object) -> int:
+    """Return inclusive number of calendar days between two dates."""
+    start_ts = pd.to_datetime(start).normalize()
+    end_ts = pd.to_datetime(end).normalize()
+    if pd.isna(start_ts) or pd.isna(end_ts):
+        return 0
+    return max(int((end_ts - start_ts).days) + 1, 0)
+
+
+def _coverage_summary(available_days: int, expected_days: int) -> str:
+    """Render an availability summary for a date range."""
+    expected = max(int(expected_days), 0)
+    available = max(int(available_days), 0)
+    if expected == 0:
+        return "No days in range"
+
+    available = min(available, expected)
+    missing = max(expected - available, 0)
+    if missing == 0:
+        return f"{available}/{expected} days present"
+    return f"{available}/{expected} days present ({missing} missing)"
+
+
 _inject_styles()
 
 try:
@@ -1532,6 +1559,13 @@ if bounds_df.empty or bounds_df["min_date"].isna().all() or bounds_df["max_date"
 
 min_date = pd.to_datetime(bounds_df.iloc[0]["min_date"]).date()
 max_date = pd.to_datetime(bounds_df.iloc[0]["max_date"]).date()
+expected_dataset_days = _date_span_days(min_date, max_date)
+days_available_raw = bounds_df.iloc[0].get("days_available")
+if pd.notna(days_available_raw):
+    dataset_days_available = int(days_available_raw)
+else:
+    dataset_days_available = expected_dataset_days
+dataset_coverage_text = _coverage_summary(dataset_days_available, expected_dataset_days)
 default_start = max(min_date, max_date - pd.Timedelta(days=89))
 default_end = max_date
 analytics_preset_options = ["Last 30D", "Last 90D", "YTD", "Custom"]
@@ -1798,6 +1832,10 @@ if daily.empty:
     st.warning("No rows returned for selected range.")
     st.stop()
 
+expected_view_days = _date_span_days(selected_start, selected_end)
+view_days_available = int(daily["service_date"].dt.normalize().nunique())
+view_coverage_text = _coverage_summary(view_days_available, expected_view_days)
+
 last7 = daily.tail(7)
 
 current_end = pd.to_datetime(daily["service_date"]).max()
@@ -1990,8 +2028,8 @@ if active_page == "dashboard":
             <div class="live"><span class="dot"></span><span>Live</span></div>
         </div>
         <div class="mini-grid">
-            <div class="mini"><div class="k">Coverage</div><div class="v">{min_date.strftime('%d %b %Y')} -> {max_date.strftime('%d %b %Y')}</div></div>
-            <div class="mini"><div class="k">View Window</div><div class="v">{selected_start.strftime('%d %b %Y')} -> {selected_end.strftime('%d %b %Y')}</div></div>
+            <div class="mini"><div class="k">Coverage</div><div class="v">{min_date.strftime('%d %b %Y')} -> {max_date.strftime('%d %b %Y')}</div><div class="sub">{escape(dataset_coverage_text)}</div></div>
+            <div class="mini"><div class="k">View Window</div><div class="v">{selected_start.strftime('%d %b %Y')} -> {selected_end.strftime('%d %b %Y')}</div><div class="sub">{escape(view_coverage_text)}</div></div>
             <div class="mini"><div class="k">Comparison Baseline</div><div class="v">{escape(comparison_baseline_text)}</div></div>
         </div>
         """,

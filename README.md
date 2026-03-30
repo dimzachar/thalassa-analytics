@@ -17,35 +17,16 @@ This repository is written to satisfy the spirit of the DE Zoomcamp course proje
 
 ## Table of contents
 
-- [Thalassa](#thalassa)
-  - [Table of contents](#table-of-contents)
-  - [Repository layout](#repository-layout)
-  - [Quick start](#quick-start)
-  - [Problem statement and Dataset](#problem-statement-and-dataset)
-    - [Dataset](#dataset)
-  - [Course project requirements mapping](#course-project-requirements-mapping)
-  - [Architecture](#architecture)
-  - [Step-by-step reproduction](#step-by-step-reproduction)
-    - [Clone the repository](#clone-the-repository)
-    - [Install Python dependencies](#install-python-dependencies)
-    - [Create or choose a GCP project](#create-or-choose-a-gcp-project)
-    - [Authenticate to Google Cloud](#authenticate-to-google-cloud)
-    - [Configure Bruin](#configure-bruin)
-    - [Choose a setup path](#choose-a-setup-path)
-      - [One-click setup (recommended)](#one-click-setup-recommended)
-      - [Manual setup](#manual-setup)
-    - [Run the initial backfill](#run-the-initial-backfill)
-    - [Launch the dashboard](#launch-the-dashboard)
-    - [Optional: visualize the pipeline DAG](#optional-visualize-the-pipeline-dag)
-    - [Change the dataset later](#change-the-dataset-later)
-    - [Validate manually](#validate-manually)
-    - [Optional: regenerate intelligence snapshots directly](#optional-regenerate-intelligence-snapshots-directly)
-    - [Verify that the run worked](#verify-that-the-run-worked)
-    - [Delete the GCP resources](#delete-the-gcp-resources)
-  - [Dashboard](#dashboard)
-  - [Using AI on Bruin Cloud UI](#using-ai-on-bruin-cloud-ui)
-  - [Future improvements](#future-improvements)
-  - [Contributing](#contributing)
+- [Repository layout](#repository-layout)
+- [Quick start](#quick-start)
+- [Problem statement and Dataset](#problem-statement-and-dataset)
+- [Course project requirements mapping](#course-project-requirements-mapping)
+- [Architecture](#architecture)
+- [Step-by-step reproduction](#step-by-step-reproduction)
+- [Dashboard](#dashboard)
+- [Using AI on Bruin Cloud UI](#using-ai-on-bruin-cloud-ui)
+- [Future improvements](#future-improvements)
+- [Contributing](#contributing)
 
 ## Repository layout
 
@@ -342,7 +323,21 @@ terraform -chdir=infra apply
 
 See more about [what Terraform creates](infra/README.md).
 
+### Bruin local secret placeholders
+
 Those AI secret slots are empty placeholders. You do not need to add OpenRouter, Anthropic, or Gemini keys unless you want LLM-generated intelligence text. Without them, the project still runs and falls back to deterministic reporting.
+
+- The `thalassa.auto_panel_snapshot_writer` asset expects Bruin secret connection names to exist.
+- For local runs without an LLM key, add placeholder `generic` connections once:
+
+```bash
+bruin connections add --environment default --name openrouter_api_key --type generic --credentials '{}'
+bruin connections add --environment default --name openrouter_model --type generic --credentials '{"value":"google/gemini-2.0-flash-exp:free"}'
+bruin connections add --environment default --name openrouter_base_url --type generic --credentials '{"value":"https://openrouter.ai/api/v1"}'
+```
+
+- If your `.bruin.yml` was created from `.bruin.yml.example`, these placeholders already exist and you can skip these commands.
+- These can be empty; with no API key, snapshot generation falls back to deterministic mode.
 
 ### Run the initial backfill
 
@@ -350,13 +345,16 @@ For a first run, use `--full-refresh`. This is especially important if tables al
 
 ```bash
 uv run --no-project python ./scripts/sync_bruin_dataset.py
-bruin run --full-refresh ./pipeline/assets/ingestion/raw_sailing_traffic.py --downstream --start-date 2025-01-01 --end-date 2025-01-31
+bruin run --full-refresh ./pipeline/assets/ingestion/raw_sailing_traffic.py --downstream --start-date 2025-01-01 --end-date 2025-01-31 --var 'source_data_lag_days=0'
 ```
+
+The pipeline default is `source_data_lag_days=1` for scheduled runs.
+For manual backfills, pass `--var 'source_data_lag_days=0'` so the requested `--start-date` and `--end-date` are used as-is.
 
 To backfill a larger date range, use `--var 'request_window_unit="month"'` to batch requests by month instead of day. The API data starts from `2017-01-03`.
 
 ```bash
-bruin run ./pipeline/assets/ingestion/raw_sailing_traffic.py --downstream --start-date 2017-01-01 --end-date 2023-12-31 --var 'request_window_unit="month"'
+bruin run ./pipeline/assets/ingestion/raw_sailing_traffic.py --downstream --start-date 2017-01-01 --end-date 2023-12-31 --var 'request_window_unit="month"' --var 'source_data_lag_days=0'
 ```
 
 > [!NOTE]
@@ -382,6 +380,12 @@ uv run streamlit run ./dashboard/app.py
 ```
 
 Open the local Streamlit URL shown in the terminal.
+
+If BigQuery returns `USER_PROJECT_DENIED` / `serviceusage.services.use`:
+
+- Local Streamlit auth uses your local identity by default (ADC user), unless you explicitly set `THALASSA_GCP_SERVICE_ACCOUNT_FILE`, `GOOGLE_APPLICATION_CREDENTIALS`, or `.streamlit/secrets.toml`.
+- Terraform grants `roles/serviceusage.serviceUsageConsumer` and `roles/bigquery.jobUser` to the pipeline service account (`<dataset>-pipeline`), not automatically to every human user in the project.
+- The identity used by Streamlit must have permission to use the project for quota/billing (`serviceusage.services.use`) and BigQuery read access to the configured dataset.
 
 ### Optional: visualize the pipeline DAG
 
@@ -546,7 +550,8 @@ The Cloud UI also doubles as a pipeline dashboard — you can track runs, failur
 
 Scheduled lag setting on Bruin Cloud:
 
-- For the `thalassa` scheduled run in Bruin Cloud, keep `source_data_lag_days=1` so each daily run reads the intended delayed date window.
+- The pipeline default is `source_data_lag_days=1` because the source publishes data with a one-day lag, so scheduled runs target the latest available complete date.
+- For manual backfills where you want literal dates, pass `--var 'source_data_lag_days=0'`.
 - Re-running the same interval with `strategy: append` can append duplicate rows in `raw_sailing_traffic` (downstream models deduplicate by `record_hash`).
 
 Enable LLM overlay in scheduled pipeline snapshots:
