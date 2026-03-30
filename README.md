@@ -359,6 +359,12 @@ To backfill a larger date range, use `--var 'request_window_unit="month"'` to ba
 bruin run ./pipeline/assets/ingestion/raw_sailing_traffic.py --downstream --start-date 2017-01-01 --end-date 2023-12-31 --var 'request_window_unit="month"'
 ```
 
+If your source publishes data with delay, add a lag offset (for example `1` day):
+
+```bash
+bruin run ./pipeline/assets/ingestion/raw_sailing_traffic.py --downstream --start-date 2026-03-29 --end-date 2026-03-29 --var "source_data_lag_days=1"
+```
+
 > [!NOTE]
 > The API enforces a 249-day maximum per request window. `month` (max 31 days) is safe. `year` will always fail with a 400.
 

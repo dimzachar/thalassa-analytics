@@ -60,7 +60,10 @@ def main() -> None:
     kpi_window_override = os.getenv("THALASSA_KPI_WINDOW_DAYS", "").strip()
 
     if not bq_project:
-        raise ValueError("Set THALASSA_BQ_PROJECT in .env")
+        raise ValueError(
+            "Unable to resolve BigQuery project. Set THALASSA_BQ_PROJECT "
+            "or GOOGLE_CLOUD_PROJECT."
+        )
 
     client = create_bigquery_client(bq_project, bq_location)
 

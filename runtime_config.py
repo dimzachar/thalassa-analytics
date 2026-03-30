@@ -36,9 +36,51 @@ def load_env_file(path: Path) -> None:
 load_env_file(PROJECT_ROOT / ".env")
 
 
+def _read_project_from_bruin_config(path: Path) -> str:
+    """Read project_id from .bruin.yml when available."""
+    if not path.exists():
+        return ""
+
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or not line.startswith("project_id:"):
+            continue
+
+        _, value = line.split(":", 1)
+        project_id = value.strip().strip("'\"")
+        if project_id and project_id != "YOUR_GCP_PROJECT":
+            return project_id
+
+    return ""
+
+
 def get_bq_project() -> str:
     """Return the configured BigQuery project ID."""
-    return os.getenv("THALASSA_BQ_PROJECT", "").strip()
+    for key in (
+        "THALASSA_BQ_PROJECT",
+        "GOOGLE_CLOUD_PROJECT",
+        "GCP_PROJECT",
+        "GCLOUD_PROJECT",
+        "GOOGLE_PROJECT",
+    ):
+        value = os.getenv(key, "").strip()
+        if value:
+            return value
+
+    project_from_bruin = _read_project_from_bruin_config(PROJECT_ROOT / ".bruin.yml")
+    if project_from_bruin:
+        return project_from_bruin
+
+    try:
+        import google.auth
+
+        _, project = google.auth.default()
+        if project:
+            return project.strip()
+    except Exception:
+        pass
+
+    return ""
 
 
 def get_bq_dataset() -> str:

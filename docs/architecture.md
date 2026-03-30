@@ -141,6 +141,7 @@ Runtime behavior is controlled with Bruin variables such as:
 - `request_retry_max_delay_seconds`
 - `request_failed_window_replay_passes`
 - `request_failed_window_replay_delay_seconds`
+- `source_data_lag_days`
 
 The ingestion asset calls the public API in windows, retries transient failures, replays failed windows, and stores the raw JSON payload for traceability.
 

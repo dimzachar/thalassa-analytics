@@ -57,6 +57,7 @@ def materialize():
     retry_max_delay_seconds = float(vars.get("request_retry_max_delay_seconds", 30.0))
     failed_window_replay_passes = int(vars.get("request_failed_window_replay_passes", 2))
     failed_window_replay_delay_seconds = float(vars.get("request_failed_window_replay_delay_seconds", 5.0))
+    source_data_lag_days = int(vars.get("source_data_lag_days", 0))
 
     if window_unit not in {"day", "month", "year"}:
         raise ValueError("request_window_unit must be one of: day, month, year")
@@ -72,6 +73,8 @@ def materialize():
         raise ValueError("request_failed_window_replay_passes must be >= 0")
     if failed_window_replay_delay_seconds < 0:
         raise ValueError("request_failed_window_replay_delay_seconds must be >= 0")
+    if source_data_lag_days < 0:
+        raise ValueError("source_data_lag_days must be >= 0")
 
     class NonRetryableRequestError(RuntimeError):
         pass
@@ -141,6 +144,16 @@ def materialize():
 
     start = pd.Timestamp(start_date).normalize()
     end = pd.Timestamp(end_date).normalize()
+
+    if source_data_lag_days:
+        lag_delta = pd.Timedelta(days=source_data_lag_days)
+        start = start - lag_delta
+        end = end - lag_delta
+        print(
+            "Applying source lag of "
+            f"{source_data_lag_days} day(s): scheduled {start_date} -> {end_date}, "
+            f"effective {start.strftime('%Y-%m-%d')} -> {end.strftime('%Y-%m-%d')}"
+        )
 
     if start > end:
         raise ValueError(f"BRUIN_START_DATE ({start_date}) must be <= BRUIN_END_DATE ({end_date})")
@@ -262,7 +275,8 @@ def materialize():
         )
 
     print(
-        f"Completed {total_windows} windows for {start_date} -> {end_date}. "
+        f"Completed {total_windows} windows for {start.strftime('%Y-%m-%d')} -> {end.strftime('%Y-%m-%d')} "
+        f"(scheduled {start_date} -> {end_date}). "
         f"Loaded {len(rows)} rows across {total_windows - empty_windows} non-empty windows. "
         f"Empty windows: {empty_windows}."
     )
