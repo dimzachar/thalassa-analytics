@@ -7,7 +7,11 @@
 [![GCP](https://img.shields.io/badge/GCP-Cloud-4285F4?style=flat-square&logo=googlecloud&logoColor=white)](https://cloud.google.com/)
 [![Terraform](https://img.shields.io/badge/Terraform-IaC-844FBA?style=flat-square&logo=terraform&logoColor=white)](https://www.terraform.io/)
 
-Thalassa is a production-style batch data engineering project for Greek maritime traffic analytics. It ingests public sailing traffic data from the `data.gov.gr` `sailing_traffic` API, lands the raw records in BigQuery, transforms them into curated analytics tables with Bruin, and serves a Streamlit dashboard with both operational KPIs and deeper route/port analysis.
+
+Thalassa is a production-style batch data engineering project for Greek maritime traffic analytics.
+
+It uses Bruin to orchestrate a fully scheduled pipeline that ingests public sailing traffic data from the
+[`data.gov.gr`](https://data.gov.gr) `sailing_traffic` API, lands raw records in BigQuery, transforms them into curated analytics tables, and serves the results through a Streamlit dashboard covering operational KPIs, route patterns, and port analysis.
 
 This repository is written to satisfy the spirit of the DE Zoomcamp course project: pick a real dataset, build an end-to-end pipeline, transform the data in a cloud warehouse, and expose it through a dashboard that is easy for reviewers to reproduce.
 
