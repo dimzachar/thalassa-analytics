@@ -6,6 +6,12 @@ connection: gcp-default
 secrets:
   - key: gcp-default
     inject_as: GCP_CONN
+  - key: openrouter_api_key
+    inject_as: OPENROUTER_API_KEY
+  - key: openrouter_model
+    inject_as: OPENROUTER_MODEL
+  - key: openrouter_base_url
+    inject_as: OPENROUTER_BASE_URL
 
 depends:
   - thalassa.intelligence_snapshots
