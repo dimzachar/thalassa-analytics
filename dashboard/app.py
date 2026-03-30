@@ -433,9 +433,56 @@ def get_bq_client() -> bigquery.Client:
     return create_bigquery_client(BQ_PROJECT, BQ_LOCATION, streamlit_secrets=streamlit_secrets)
 
 
+def get_data_refresh_token() -> str:
+    """Return a cache-busting token that changes whenever core reporting tables change."""
+    client = get_bq_client()
+    metadata_query = f"""
+        SELECT STRING_AGG(
+            CONCAT(table_name, ':', CAST(last_modified_time AS STRING)),
+            '|'
+            ORDER BY table_name
+        ) AS data_token
+        FROM `{BQ_PROJECT}.{BQ_DATASET}.INFORMATION_SCHEMA.TABLES`
+        WHERE table_name IN ('row_counts_daily', 'fct_route_traffic_daily', 'fct_port_activity_daily')
+    """
+    try:
+        metadata_job = client.query(metadata_query)
+        metadata_df = job_to_dataframe(metadata_job)
+        if not metadata_df.empty:
+            token = str(metadata_df.iloc[0].get("data_token", "")).strip()
+            if token:
+                return token
+    except Exception:
+        pass
+
+    fallback_query = f"""
+        SELECT
+            CONCAT(
+                CAST(MAX(service_date) AS STRING),
+                '|',
+                CAST(COUNT(*) AS STRING),
+                '|',
+                CAST(COALESCE(SUM(rows_count), 0) AS STRING)
+            ) AS data_token
+        FROM {_qualify(build_dataset_table('row_counts_daily', BQ_DATASET))}
+    """
+    try:
+        fallback_job = client.query(fallback_query)
+        fallback_df = job_to_dataframe(fallback_job)
+        if not fallback_df.empty:
+            token = str(fallback_df.iloc[0].get("data_token", "")).strip()
+            if token:
+                return token
+    except Exception:
+        pass
+
+    return "unavailable"
+
+
 @st.cache_data(show_spinner=False)
 def _run_query(
     query: str,
+    data_token: str,
     scalar_params: tuple[tuple[str, str, object], ...] = (),
     timeout_seconds: int = 30,
 ) -> pd.DataFrame:
@@ -456,18 +503,19 @@ def _run_query(
 
 
 @st.cache_data(show_spinner=False)
-def load_date_bounds() -> pd.DataFrame:
+def load_date_bounds(data_token: str) -> pd.DataFrame:
     """Load the min and max service dates available in the dataset."""
     return _run_query(
         f"""
         SELECT MIN(service_date) AS min_date, MAX(service_date) AS max_date
         FROM {_qualify(build_dataset_table('row_counts_daily', BQ_DATASET))}
-        """
+        """,
+        data_token=data_token,
     )
 
 
 @st.cache_data(show_spinner=False)
-def load_daily(start_date: str, end_date: str) -> pd.DataFrame:
+def load_daily(start_date: str, end_date: str, data_token: str) -> pd.DataFrame:
     """Load daily network totals for the selected window."""
     return _run_query(
         f"""
@@ -484,12 +532,13 @@ def load_daily(start_date: str, end_date: str) -> pd.DataFrame:
         WHERE service_date BETWEEN @start_date AND @end_date
         ORDER BY service_date
         """,
+        data_token=data_token,
         scalar_params=(("start_date", "DATE", start_date), ("end_date", "DATE", end_date)),
     )
 
 
 @st.cache_data(show_spinner=False)
-def load_weekly(start_date: str, end_date: str) -> pd.DataFrame:
+def load_weekly(start_date: str, end_date: str, data_token: str) -> pd.DataFrame:
     """Load weekly network totals for the selected window."""
     return _run_query(
         f"""
@@ -505,12 +554,13 @@ def load_weekly(start_date: str, end_date: str) -> pd.DataFrame:
         WHERE week_start BETWEEN @start_date AND @end_date
         ORDER BY week_start
         """,
+        data_token=data_token,
         scalar_params=(("start_date", "DATE", start_date), ("end_date", "DATE", end_date)),
     )
 
 
 @st.cache_data(show_spinner=False)
-def load_monthly(start_date: str, end_date: str) -> pd.DataFrame:
+def load_monthly(start_date: str, end_date: str, data_token: str) -> pd.DataFrame:
     """Load monthly network totals for the selected window."""
     return _run_query(
         f"""
@@ -526,12 +576,13 @@ def load_monthly(start_date: str, end_date: str) -> pd.DataFrame:
         WHERE year_month BETWEEN @start_date AND @end_date
         ORDER BY year_month
         """,
+        data_token=data_token,
         scalar_params=(("start_date", "DATE", start_date), ("end_date", "DATE", end_date)),
     )
 
 
 @st.cache_data(show_spinner=False)
-def load_routes(start_date: str, end_date: str) -> pd.DataFrame:
+def load_routes(start_date: str, end_date: str, data_token: str) -> pd.DataFrame:
     """Load route-level traffic metrics for the selected window."""
     return _run_query(
         f"""
@@ -546,12 +597,13 @@ def load_routes(start_date: str, end_date: str) -> pd.DataFrame:
         WHERE service_date BETWEEN @start_date AND @end_date
         ORDER BY service_date
         """,
+        data_token=data_token,
         scalar_params=(("start_date", "DATE", start_date), ("end_date", "DATE", end_date)),
     )
 
 
 @st.cache_data(show_spinner=False)
-def load_ports(start_date: str, end_date: str) -> pd.DataFrame:
+def load_ports(start_date: str, end_date: str, data_token: str) -> pd.DataFrame:
     """Load port-level traffic metrics for the selected window."""
     return _run_query(
         f"""
@@ -568,12 +620,13 @@ def load_ports(start_date: str, end_date: str) -> pd.DataFrame:
         WHERE service_date BETWEEN @start_date AND @end_date
         ORDER BY service_date
         """,
+        data_token=data_token,
         scalar_params=(("start_date", "DATE", start_date), ("end_date", "DATE", end_date)),
     )
 
 
 @st.cache_data(show_spinner=False)
-def load_filter_options() -> tuple[list[str], list[str]]:
+def load_filter_options(data_token: str) -> tuple[list[str], list[str]]:
     """Load the available route and port options for the sidebar filters."""
     route_df = _run_query(
         f"""
@@ -581,7 +634,8 @@ def load_filter_options() -> tuple[list[str], list[str]]:
         FROM {_qualify(build_dataset_table('fct_route_traffic_daily', BQ_DATASET))}
         WHERE departure_port IS NOT NULL AND arrival_port IS NOT NULL
         ORDER BY departure_port, arrival_port
-        """
+        """,
+        data_token=data_token,
     )
     port_df = _run_query(
         f"""
@@ -589,7 +643,8 @@ def load_filter_options() -> tuple[list[str], list[str]]:
         FROM {_qualify(build_dataset_table('fct_port_activity_daily', BQ_DATASET))}
         WHERE port_name IS NOT NULL
         ORDER BY port_name
-        """
+        """,
+        data_token=data_token,
     )
     route_options = ["All routes"] + [
         f"{str(row['departure_port'])} -> {str(row['arrival_port'])}" for _, row in route_df.iterrows()
@@ -1456,7 +1511,8 @@ def _format_snapshot_age(hours_since: float | None) -> str:
 _inject_styles()
 
 try:
-    bounds_df = load_date_bounds()
+    data_refresh_token = get_data_refresh_token()
+    bounds_df = load_date_bounds(data_refresh_token)
 except NotFound as exc:
     st.error("BigQuery tables not found. Check project/dataset settings.")
     st.caption(str(exc))
@@ -1476,7 +1532,7 @@ default_end = max_date
 analytics_preset_options = ["Last 30D", "Last 90D", "YTD", "Custom"]
 
 try:
-    route_options, port_options = load_filter_options()
+    route_options, port_options = load_filter_options(data_refresh_token)
 except Exception:
     route_options, port_options = ["All routes"], ["All ports"]
 
@@ -1698,11 +1754,11 @@ else:
     selected_port = str(applied_filters["port"])
 
 try:
-    daily = load_daily(selected_start.isoformat(), selected_end.isoformat())
-    weekly = load_weekly(selected_start.isoformat(), selected_end.isoformat())
-    monthly = load_monthly(selected_start.isoformat(), selected_end.isoformat())
-    routes = load_routes(selected_start.isoformat(), selected_end.isoformat())
-    ports = load_ports(selected_start.isoformat(), selected_end.isoformat())
+    daily = load_daily(selected_start.isoformat(), selected_end.isoformat(), data_refresh_token)
+    weekly = load_weekly(selected_start.isoformat(), selected_end.isoformat(), data_refresh_token)
+    monthly = load_monthly(selected_start.isoformat(), selected_end.isoformat(), data_refresh_token)
+    routes = load_routes(selected_start.isoformat(), selected_end.isoformat(), data_refresh_token)
+    ports = load_ports(selected_start.isoformat(), selected_end.isoformat(), data_refresh_token)
 except Exception as exc:
     st.error(f"Failed to load dashboard data: {exc}")
     st.stop()
