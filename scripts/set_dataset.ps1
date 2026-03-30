@@ -81,7 +81,7 @@ function Upsert-YamlScalar {
         [string]$FilePath
     )
 
-    $line = "          $Key: $Value"
+    $line = "          ${Key}: $Value"
     if (-not (Test-Path $FilePath)) {
         Set-Content -Path $FilePath -Value $line
         return
@@ -92,7 +92,7 @@ function Upsert-YamlScalar {
     $newContent = foreach ($entry in $content) {
         if (-not $updated -and $entry -match "^(\s*)$([regex]::Escape($Key)):\s*.*$") {
             $updated = $true
-            "$($Matches[1])$Key: $Value"
+            "$($Matches[1])${Key}: $Value"
         }
         else {
             $entry
