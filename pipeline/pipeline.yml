@@ -44,4 +44,4 @@ variables:
   source_data_lag_days:
     type: integer
     minimum: 0
-    default: 0
+    default: 1
